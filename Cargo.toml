@@ -1,6 +1,42 @@
-[package]
-name = "tui-editor-v2"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = [
+  "ted-cli",
+  "ted-config",
+  "ted-core",
+  "ted-events",
+  "ted-fs",
+  "ted-tui",
+]
 
-[dependencies]
+default-members = ["ted-cli"]
+
+[workspace.dependencies]
+crossterm = "0.29.0"
+ratatui = "0.30.0"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.50.0", features = ["full"] }
+
+# TODO: convert this into a workspace
+# Maybe I could name it `ted`, for tui + edit ? I like it.
+# - events (the events for delayed background processing)
+#   - tokio
+# - app (the main stuff)
+#   - crossterm
+#   - ratatui
+#   - tokio
+# - cli (clap integration)
+#   - clap
+# - widgets / screens (stateful widgets, ratatui stuff)
+#   - crossterm
+#   - ratatui
+# - state (pure state data) <- don't have this. Have `ted-fs` for filesystem integration
+
+# TODO: like helix, maybe later have:
+# - ted-lsp
+# - ted-git
+
+# For now, ted-cli is going to be the main binary
+# Core will contain the main app logic and import all other crates as deps
+
+# Do the config with the config file in ted-config. Host this in the app.

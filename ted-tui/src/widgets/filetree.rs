@@ -1,18 +1,19 @@
 use crate::{state::State, widgets::TedWidget};
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ted_fs::{File, Filesystem, Folder};
 
 /// Filetree widget
 pub struct Filetree {
     rect: Rect,
-    // TODO: cursor offset
+    cursor: usize,
 }
 
 impl Filetree {
     pub fn new() -> Self {
         Self {
             rect: Rect::default(),
+            cursor: 0,
         }
     }
 }
@@ -22,12 +23,32 @@ impl TedWidget for Filetree {
         let mut lines = vec![];
         let mut remaining = area.height;
         recurse_lines(&state.fs, state.fs.root(), &mut lines, &mut remaining, 0);
+
+        if lines.is_empty() {
+            return;
+        }
+
+        if self.cursor >= lines.len() {
+            self.cursor = lines.len() - 1;
+        }
+
+        apply_consume(&mut lines, self.cursor, |line| line.on_dark_gray());
+
         Text::from(lines).render(area, buf);
+        self.rect = area;
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> bool {
-        // TODO: change cursor offset with keys
-        false
+        match event {
+            Event::Key(key) => match key.code {
+                KeyCode::Up => self.cursor = self.cursor.saturating_sub(1),
+                KeyCode::Down => self.cursor = self.cursor.saturating_add(1),
+                _ => return false,
+            },
+            _ => return false,
+        }
+
+        true
     }
 }
 
@@ -87,5 +108,13 @@ fn recurse_lines<'a>(
         let file = &fs.file(*file_key);
         lines.push(file_line(file, depth));
         *remaining = remaining.saturating_sub(1);
+    }
+}
+
+/// Modify an item in a slice that requires consuming it to produce a new value.
+fn apply_consume<T: Default>(slice: &mut [T], index: usize, f: impl Fn(T) -> T) {
+    if index < slice.len() {
+        let item = std::mem::take(&mut slice[index]);
+        slice[index] = f(item);
     }
 }

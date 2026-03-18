@@ -68,6 +68,8 @@ impl App {
             }
             _ => {}
         }
+
+        self.filetree.handle(&event, &mut self.state);
     }
 
     fn render(&mut self, frame: &mut Frame) {

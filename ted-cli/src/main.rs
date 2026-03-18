@@ -1,6 +1,7 @@
 use std::{env::set_current_dir, io};
 
 use clap::Parser;
+use ted_fs::Filesystem;
 
 use crate::args::Args;
 
@@ -19,6 +20,8 @@ fn main() -> io::Result<()> {
             eprintln!("Path does not exist: {}", path.display());
         }
     }
+
+    let filesystem = Filesystem::new();
 
     Ok(())
 }

@@ -1,14 +1,15 @@
 use std::{env::set_current_dir, io};
 
 use clap::Parser;
-use ted_fs::Filesystem;
+use ted_tui::App;
 
 use crate::args::Args;
 
 mod args;
 mod colors;
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     let args = Args::parse();
 
     if let Some(path) = args.path {
@@ -21,7 +22,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    let filesystem = Filesystem::new();
-
-    Ok(())
+    let mut app = App::new();
+    app.run().await
 }

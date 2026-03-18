@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+futures = "0.3.31"
+crossterm.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
+ted-fs.path = "../ted-fs"

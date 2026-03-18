@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 anstyle = "1.0.14"
 clap = { version = "4.5.60", features = ["derive"] }
-ted-fs = { path = "../ted-fs" }
+tokio.workspace = true
+ted-tui.path = "../ted-tui"
 
 [[bin]]
 name = "ted"

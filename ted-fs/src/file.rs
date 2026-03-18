@@ -4,9 +4,9 @@ use devicons::FileIcon;
 use hex_color::HexColor;
 use ropey::Rope;
 
-struct Devicon {
-    text: String,
-    color: Option<HexColor>,
+pub struct Devicon {
+    pub text: String,
+    pub color: Option<HexColor>,
 }
 
 impl Devicon {
@@ -23,9 +23,9 @@ impl Devicon {
 pub struct File {
     /// Absolute path
     path: PathBuf,
-    name: String,
-    buffer: Option<Rope>,
-    icon: Devicon,
+    pub name: String,
+    pub buffer: Option<Rope>,
+    pub icon: Devicon,
 }
 
 impl File {

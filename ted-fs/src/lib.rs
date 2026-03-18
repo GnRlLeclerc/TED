@@ -7,11 +7,13 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{events::FSEvent, file::File, folder::Folder};
-
 mod events;
 mod file;
 mod folder;
+
+pub use events::FSEvent;
+pub use file::File;
+pub use folder::Folder;
 
 new_key_type! {
     pub struct FileKey;
@@ -19,6 +21,7 @@ new_key_type! {
 }
 
 pub struct Filesystem {
+    root: FolderKey,
     files: SlotMap<FileKey, File>,
     folders: SlotMap<FolderKey, Folder>,
     folder_paths: HashMap<PathBuf, FolderKey>,
@@ -37,18 +40,34 @@ impl Filesystem {
     pub fn new() -> (Self, Receiver<FSEvent>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(64);
 
-        (
-            Self {
-                files: SlotMap::with_key(),
-                folders: SlotMap::with_key(),
-                folder_paths: HashMap::new(),
-                unsaved: HashSet::new(),
-                peeked: HashMap::new(),
+        let mut folders = SlotMap::with_key();
+        let root = folders.insert(Folder::new(PathBuf::from(".")));
 
-                sender,
-            },
-            receiver,
-        )
+        let fs = Self {
+            root,
+            files: SlotMap::with_key(),
+            folders,
+            folder_paths: HashMap::new(),
+            unsaved: HashSet::new(),
+            peeked: HashMap::new(),
+
+            sender: sender.clone(),
+        };
+
+        fs.load_folder(sender, root);
+        (fs, receiver)
+    }
+
+    pub fn root(&self) -> &Folder {
+        &self.folders[self.root]
+    }
+
+    pub fn folder(&self, key: FolderKey) -> &Folder {
+        &self.folders[key]
+    }
+
+    pub fn file(&self, key: FileKey) -> &File {
+        &self.files[key]
     }
 
     pub fn open(&mut self, key: FolderKey) {

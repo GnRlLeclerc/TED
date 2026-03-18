@@ -4,6 +4,8 @@ use devicons::FileIcon;
 use hex_color::HexColor;
 use ropey::Rope;
 
+use crate::FolderKey;
+
 pub struct Devicon {
     pub text: String,
     pub color: Option<HexColor>,
@@ -23,13 +25,14 @@ impl Devicon {
 pub struct File {
     /// Absolute path
     path: PathBuf,
+    pub parent: FolderKey,
     pub name: String,
     pub buffer: Option<Rope>,
     pub icon: Devicon,
 }
 
 impl File {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, parent: FolderKey) -> Self {
         let icon = Devicon::new(&path);
         let name = path
             .file_name()
@@ -39,6 +42,7 @@ impl File {
 
         Self {
             path,
+            parent,
             name,
             icon,
             buffer: None,

@@ -41,7 +41,8 @@ impl Filesystem {
         let (sender, receiver) = tokio::sync::mpsc::channel(64);
 
         let mut folders = SlotMap::with_key();
-        let root = folders.insert(Folder::new(PathBuf::from(".")));
+        let root = folders.insert(Folder::new(PathBuf::from("."), FolderKey::default()));
+        folders[root].parent = root; // root folder points to itself
 
         let fs = Self {
             root,
@@ -70,13 +71,22 @@ impl Filesystem {
         &self.files[key]
     }
 
+    pub fn file_parent(&self, key: FileKey) -> FolderKey {
+        self.files[key].parent
+    }
+
+    pub fn folder_parent(&self, key: FolderKey) -> FolderKey {
+        self.folders[key].parent
+    }
+
     pub fn open(&mut self, key: FolderKey) {
         if self.folders[key].open {
             return;
-        } else if self.folders[key].init {
-            self.folders[key].open = true;
         } else {
-            self.load_folder(self.sender.clone(), key);
+            self.folders[key].open = true;
+            if !self.folders[key].init {
+                self.load_folder(self.sender.clone(), key);
+            }
         }
     }
 
@@ -84,6 +94,13 @@ impl Filesystem {
         self.folders[key].open = false;
     }
 
+    pub fn toggle(&mut self, key: FolderKey) {
+        if self.folders[key].open {
+            self.close(key);
+        } else {
+            self.open(key);
+        }
+    }
     /// Handle an event emitted by a background filesystem task
     pub fn handle_event(&mut self, event: FSEvent) {
         match event {
@@ -113,9 +130,9 @@ impl Filesystem {
                     while let Ok(Some(entry)) = entries.next_entry().await {
                         let path = entry.path();
                         if path.is_dir() {
-                            folders.push(Folder::new(path));
+                            folders.push(Folder::new(path, key));
                         } else {
-                            files.push(File::new(path));
+                            files.push(File::new(path, key));
                         }
                     }
 

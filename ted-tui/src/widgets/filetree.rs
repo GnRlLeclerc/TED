@@ -1,27 +1,32 @@
+use std::time::{Duration, Instant};
+
 use crate::{state::State, widgets::TedWidget};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
 use ted_fs::{File, FileKey, Filesystem, Folder, FolderKey};
 
-enum Selection {
+enum Item {
     File(FileKey),
     Folder(FolderKey),
-    None,
 }
 
 /// Filetree widget
 pub struct Filetree {
     rect: Rect,
     cursor: u16,
-    selection: Selection,
+    last_click: Instant,
+    /// Rendered items.
+    /// Kept in memory for event handling on the rendered menu.
+    items: Vec<Item>,
 }
 
 impl Filetree {
     pub fn new() -> Self {
         Self {
             rect: Rect::default(),
+            last_click: Instant::now(),
             cursor: 0,
-            selection: Selection::None,
+            items: vec![],
         }
     }
 }
@@ -29,9 +34,28 @@ impl Filetree {
 impl TedWidget for Filetree {
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &State) {
         let mut lines = vec![];
-        let mut count = 0;
-        let total = area.height;
-        self.recurse_lines(&state.fs, state.fs.root(), &mut lines, &mut count, total, 0);
+        let mut remaining = area.height;
+
+        self.items.clear(); // reset rendered item keys
+        self.recurse_lines(&state.fs, state.fs.root(), &mut lines, &mut remaining, 0);
+
+        // Adjust cursor position
+        if self.cursor >= lines.len() as u16 {
+            self.cursor = lines.len().saturating_sub(1) as u16;
+        }
+
+        // Reprocess the lines to set the cursor style
+        let lines: Vec<_> = lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i as u16 == self.cursor {
+                    line.on_dark_gray()
+                } else {
+                    line
+                }
+            })
+            .collect();
 
         Text::from(lines).render(area, buf);
         self.rect = area;
@@ -51,9 +75,21 @@ impl TedWidget for Filetree {
 
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
+                        let now = Instant::now();
+
+                        // Double click detected, toggle if it's a folder
+                        if self.cursor == index
+                            && now.duration_since(self.last_click) < Duration::from_millis(500)
+                            && let Some(item) = self.items.get(index as usize)
+                            && let Item::Folder(key) = item
+                        {
+                            state.fs.toggle(*key);
+                        }
+
                         self.cursor = index;
+                        self.last_click = now;
                     }
-                    _ => {}
+                    _ => return false,
                 }
             }
             _ => return false,
@@ -64,30 +100,56 @@ impl TedWidget for Filetree {
 }
 
 impl Filetree {
+    /// Move the cursor up in the file tree
     fn up(&mut self) {
         self.cursor = self.cursor.saturating_sub(1);
     }
+    /// Move the cursor down in the file tree
     fn down(&mut self) {
         self.cursor = self.cursor.saturating_add(1);
     }
+    /// Toggle the open state of the selected folder
     fn toggle(&mut self, fs: &mut Filesystem) {
-        if let Selection::Folder(key) = self.selection {
-            fs.toggle(key);
+        if let Some(Item::Folder(key)) = self.items.get(self.cursor as usize) {
+            fs.toggle(*key);
         }
     }
+    /// Recursively close all children of the selected folder
     fn close(&mut self, fs: &mut Filesystem) {
-        let key = match self.selection {
-            Selection::Folder(key) => {
-                if fs.folder(key).open {
-                    key
-                } else {
-                    fs.folder_parent(key)
+        if let Some(item) = self.items.get(self.cursor as usize) {
+            let key = match item {
+                Item::Folder(key) => {
+                    if fs.folder(*key).open {
+                        *key
+                    } else {
+                        match fs.folder_parent(*key) {
+                            Some(parent) => {
+                                self.cursor = self.folder_position(parent).unwrap_or(0);
+                                parent
+                            }
+                            None => {
+                                self.cursor = 0;
+                                fs.root_key()
+                            }
+                        }
+                    }
                 }
-            }
-            Selection::File(key) => fs.file_parent(key),
-            _ => return,
-        };
-        fs.close(key);
+                Item::File(key) => {
+                    let parent = fs.file_parent(*key);
+                    self.cursor = self.folder_position(parent).unwrap_or(0);
+                    parent
+                }
+            };
+            fs.close_recurse(key);
+        }
+    }
+
+    /// Returns the cursor position of the given folder in the rendered items
+    fn folder_position(&self, key: FolderKey) -> Option<u16> {
+        self.items
+            .iter()
+            .position(|item| matches!(item, Item::Folder(k) if *k == key))
+            .map(|pos| pos as u16)
     }
 
     /// Recursively display files, folders and their children
@@ -96,12 +158,11 @@ impl Filetree {
         fs: &'a Filesystem,
         folder: &Folder,
         lines: &mut Vec<Line<'a>>,
-        count: &mut u16,
-        total: u16,
+        remaining: &mut u16,
         depth: usize,
     ) {
         for folder_key in &folder.child_folders {
-            if *count == total {
+            if *remaining == 0 {
                 return;
             }
 
@@ -109,31 +170,23 @@ impl Filetree {
             if folder.hidden() {
                 continue;
             }
-            let mut line = folder_line(folder, depth);
-            if *count == self.cursor {
-                line = line.on_dark_gray();
-                self.selection = Selection::Folder(*folder_key);
-            }
-            lines.push(line);
-            *count += 1;
+            lines.push(folder_line(folder, depth));
+            self.items.push(Item::Folder(*folder_key)); // track rendered folder key
+            *remaining -= 1;
 
             if folder.open {
-                self.recurse_lines(fs, folder, lines, count, total, depth + 1);
+                self.recurse_lines(fs, folder, lines, remaining, depth + 1);
             }
         }
 
         for file_key in &folder.child_files {
-            if *count == total {
+            if *remaining == 0 {
                 return;
             }
             let file = &fs.file(*file_key);
-            let mut line = file_line(file, depth);
-            if *count == self.cursor {
-                self.selection = Selection::File(*file_key);
-                line = line.on_dark_gray();
-            }
-            lines.push(line);
-            *count += 1;
+            lines.push(file_line(file, depth));
+            self.items.push(Item::File(*file_key)); // track rendered file key
+            *remaining -= 1;
         }
     }
 }

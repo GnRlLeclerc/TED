@@ -5,7 +5,7 @@ use super::{FileKey, FolderKey};
 #[derive(Debug)]
 pub struct Folder {
     pub path: PathBuf,
-    pub parent: FolderKey,
+    pub parent: Option<FolderKey>,
     pub name: String,
 
     pub child_files: Vec<FileKey>,
@@ -18,7 +18,7 @@ pub struct Folder {
 }
 
 impl Folder {
-    pub fn new(path: PathBuf, parent: FolderKey) -> Self {
+    pub fn new(path: PathBuf, parent: Option<FolderKey>) -> Self {
         let name = path
             .file_name()
             .unwrap_or_default()

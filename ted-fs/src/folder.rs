@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use ted_config::Config;
 
 use super::{FileKey, FolderKey};
 
@@ -11,6 +12,7 @@ pub struct Folder {
     pub child_files: Vec<FileKey>,
     pub child_folders: Vec<FolderKey>,
 
+    hidden: Option<bool>,
     /// Current open state in UI
     pub open: bool,
     /// Whether the folder has already been loaded once
@@ -30,15 +32,20 @@ impl Folder {
             name,
             child_files: vec![],
             child_folders: vec![],
+            hidden: None,
             open: false,
             init: false,
         }
     }
 
-    pub fn hidden(&self) -> bool {
-        match &self.name as &str {
-            ".git" | ".venv" | "__pycache__" => true,
-            _ => false,
+    /// Determine if the folder should be hidden or not
+    /// (lazily evaluated and cached)
+    pub fn hidden(&self, config: &Config) -> bool {
+        if let Some(hidden) = self.hidden {
+            hidden
+        } else {
+            let hidden = config.ignored_folder(&self.name);
+            hidden
         }
     }
 }

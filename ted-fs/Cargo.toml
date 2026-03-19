@@ -10,3 +10,4 @@ log.workspace = true
 ropey.workspace = true
 slotmap.workspace = true
 tokio.workspace = true
+ted-config.path = "../ted-config"

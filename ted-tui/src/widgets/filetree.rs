@@ -1,8 +1,9 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::{state::State, widgets::TedWidget};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
+use ted_config::Config;
 use ted_fs::{File, FileKey, Filesystem, Folder, FolderKey};
 
 enum Item {
@@ -14,6 +15,7 @@ enum Item {
 pub struct Filetree {
     rect: Rect,
     cursor: u16,
+    scroll: u16,
     last_click: Instant,
     /// Rendered items.
     /// Kept in memory for event handling on the rendered menu.
@@ -24,8 +26,9 @@ impl Filetree {
     pub fn new() -> Self {
         Self {
             rect: Rect::default(),
-            last_click: Instant::now(),
             cursor: 0,
+            scroll: 0,
+            last_click: Instant::now(),
             items: vec![],
         }
     }
@@ -37,7 +40,14 @@ impl TedWidget for Filetree {
         let mut remaining = area.height;
 
         self.items.clear(); // reset rendered item keys
-        self.recurse_lines(&state.fs, state.fs.root(), &mut lines, &mut remaining, 0);
+        self.recurse_lines(
+            &state.fs,
+            &state.config,
+            state.fs.root(),
+            &mut lines,
+            &mut remaining,
+            0,
+        );
 
         // Adjust cursor position
         if self.cursor >= lines.len() as u16 {
@@ -79,7 +89,8 @@ impl TedWidget for Filetree {
 
                         // Double click detected, toggle if it's a folder
                         if self.cursor == index
-                            && now.duration_since(self.last_click) < Duration::from_millis(500)
+                            && now.duration_since(self.last_click)
+                                < state.config.double_click_duration
                             && let Some(item) = self.items.get(index as usize)
                             && let Item::Folder(key) = item
                         {
@@ -156,6 +167,7 @@ impl Filetree {
     fn recurse_lines<'a>(
         &mut self,
         fs: &'a Filesystem,
+        config: &Config,
         folder: &Folder,
         lines: &mut Vec<Line<'a>>,
         remaining: &mut u16,
@@ -167,7 +179,7 @@ impl Filetree {
             }
 
             let folder = &fs.folder(*folder_key);
-            if folder.hidden() {
+            if folder.hidden(config) {
                 continue;
             }
             lines.push(folder_line(folder, depth));
@@ -175,7 +187,7 @@ impl Filetree {
             *remaining -= 1;
 
             if folder.open {
-                self.recurse_lines(fs, folder, lines, remaining, depth + 1);
+                self.recurse_lines(fs, config, folder, lines, remaining, depth + 1);
             }
         }
 

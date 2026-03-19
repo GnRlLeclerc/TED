@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+log.workspace = true
+notify-debouncer-mini.workspace = true
+serde.workspace = true
+tokio.workspace = true
+dirs-next = "2.0.0"
+toml = "1.0.7"

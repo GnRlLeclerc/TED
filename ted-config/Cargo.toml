@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 log.workspace = true
-notify-debouncer-mini.workspace = true
+notify-debouncer-full.workspace = true
 serde.workspace = true
 tokio.workspace = true
 dirs-next = "2.0.0"

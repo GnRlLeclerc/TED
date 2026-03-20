@@ -43,8 +43,9 @@ pub struct Config {
 impl Config {
     pub fn new() -> (Self, Receiver<Self>, ConfigWatcher) {
         let (sender, receiver) = tokio::sync::mpsc::channel(64);
+        let (config, watcher) = watch(sender);
 
-        (Self::default(), receiver, watch(sender))
+        (config, receiver, watcher)
     }
 
     pub fn ignored_folder(&self, name: &str) -> bool {

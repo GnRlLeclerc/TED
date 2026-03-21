@@ -1,6 +1,7 @@
 use crossterm::event::Event;
 use ratatui::prelude::*;
 
+mod border;
 mod filetree;
 
 pub use filetree::Filetree;

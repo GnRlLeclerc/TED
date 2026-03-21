@@ -1,6 +1,7 @@
 mod app;
-mod layout;
+mod panes;
 mod state;
+mod utils;
 mod widgets;
 
 pub use app::App;

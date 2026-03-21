@@ -1,74 +1,90 @@
 use std::time::Instant;
 
-use crate::{state::State, widgets::TedWidget};
+use crate::{state::State, utils::scroll_to_cursor, widgets::TedWidget};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
 use ted_config::Config;
-use ted_fs::{File, FileKey, Filesystem, Folder, FolderKey};
+use ted_fs::Filesystem;
 
-enum Item {
-    File(FileKey),
-    Folder(FolderKey),
-}
+mod item;
+mod recurse;
+
+use item::Item;
+use recurse::{collect_items, count_items, folder_index};
 
 /// Filetree widget
 pub struct Filetree {
-    rect: Rect,
-    cursor: u16,
-    scroll: u16,
+    area: Rect,
+    cursor: usize,
+    scroll: usize,
     last_click: Instant,
-    /// Rendered items.
-    /// Kept in memory for event handling on the rendered menu.
-    items: Vec<Item>,
+    /// Selected item at the cursor position,
+    /// computed from self.cursor at rendering time.
+    selected: Option<Item>,
 }
 
 impl Filetree {
     pub fn new() -> Self {
         Self {
-            rect: Rect::default(),
+            area: Rect::default(),
             cursor: 0,
             scroll: 0,
             last_click: Instant::now(),
-            items: vec![],
+            selected: None,
         }
     }
 }
 
 impl TedWidget for Filetree {
+    /// 1. Recursively traverse all open folders and their children
+    ///    to count the maximum number of lines to render.
+    /// 2. Update the cursor position to one within the amount of lines to render.
+    /// 3. Update the scroll offset with respect to the cursor position, area height,
+    ///    and config scroll margin.
+    /// 4. Recursively traverse all open folders and their children again,
+    ///    this time collecting both ratatui lines to render, and a vec of item IDs
+    ///    for event handling, but only for the visible lines.
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &State) {
-        let mut lines = vec![];
-        let mut remaining = area.height;
+        // 1. Count total items
+        let n_items = count_items(&state.fs, state.fs.root(), &state.config);
 
-        self.items.clear(); // reset rendered item keys
-        self.recurse_lines(
+        // 2. Update cursor position
+        self.cursor = self.cursor.min(n_items.saturating_sub(1));
+
+        // 3. Update scroll offset
+        scroll_to_cursor(&mut self.scroll, self.cursor, area, &state.config);
+
+        // 4. Recursively collect items to display
+        let mut items = vec![];
+        let mut count = 0;
+        collect_items(
             &state.fs,
-            &state.config,
             state.fs.root(),
-            &mut lines,
-            &mut remaining,
+            &state.config,
+            &mut items,
+            &mut count,
             0,
+            self.scroll as usize,
+            area.height as usize,
         );
 
-        // Adjust cursor position
-        if self.cursor >= lines.len() as u16 {
-            self.cursor = lines.len().saturating_sub(1) as u16;
-        }
-
-        // Reprocess the lines to set the cursor style
-        let lines: Vec<_> = lines
-            .into_iter()
-            .enumerate()
-            .map(|(i, line)| {
-                if i as u16 == self.cursor {
-                    line.on_dark_gray()
-                } else {
-                    line
-                }
-            })
-            .collect();
-
-        Text::from(lines).render(area, buf);
-        self.rect = area;
+        // Produce lines to render + store the item at the cursor position for event handling
+        Text::from(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(i, (item, depth))| {
+                    if i == self.cursor.saturating_sub(self.scroll) {
+                        self.selected = Some(item);
+                        item.line(&state.fs, depth).on_dark_gray()
+                    } else {
+                        item.line(&state.fs, depth)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+        .render(area, buf);
+        self.area = area;
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> bool {
@@ -77,11 +93,11 @@ impl TedWidget for Filetree {
                 KeyCode::Up | KeyCode::Char('k') => self.up(),
                 KeyCode::Down | KeyCode::Char('j') => self.down(),
                 KeyCode::Left | KeyCode::Char('h') => self.toggle(&mut state.fs),
-                KeyCode::Right | KeyCode::Char('l') => self.close(&mut state.fs),
+                KeyCode::Right | KeyCode::Char('l') => self.close(&mut state.fs, &state.config),
                 _ => return false,
             },
             Event::Mouse(mouse) => {
-                let index = mouse.row.saturating_sub(self.rect.y);
+                let index = mouse.row.saturating_sub(self.area.y) as usize + self.scroll;
 
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
@@ -91,10 +107,12 @@ impl TedWidget for Filetree {
                         if self.cursor == index
                             && now.duration_since(self.last_click)
                                 < state.config.double_click_duration
-                            && let Some(item) = self.items.get(index as usize)
-                            && let Item::Folder(key) = item
+                            && let Some(item) = &self.selected
                         {
-                            state.fs.toggle(*key);
+                            match item {
+                                Item::Folder(key) => state.fs.toggle(*key),
+                                Item::File(_) => {} // TODO: open file
+                            }
                         }
 
                         self.cursor = index;
@@ -121,13 +139,13 @@ impl Filetree {
     }
     /// Toggle the open state of the selected folder
     fn toggle(&mut self, fs: &mut Filesystem) {
-        if let Some(Item::Folder(key)) = self.items.get(self.cursor as usize) {
+        if let Some(Item::Folder(key)) = &self.selected {
             fs.toggle(*key);
         }
     }
     /// Recursively close all children of the selected folder
-    fn close(&mut self, fs: &mut Filesystem) {
-        if let Some(item) = self.items.get(self.cursor as usize) {
+    fn close(&mut self, fs: &mut Filesystem, config: &Config) {
+        if let Some(item) = &self.selected {
             let key = match item {
                 Item::Folder(key) => {
                     if fs.folder(*key).open {
@@ -135,7 +153,7 @@ impl Filetree {
                     } else {
                         match fs.folder_parent(*key) {
                             Some(parent) => {
-                                self.cursor = self.folder_position(parent).unwrap_or(0);
+                                self.cursor = folder_index(fs, config, parent);
                                 parent
                             }
                             None => {
@@ -147,80 +165,11 @@ impl Filetree {
                 }
                 Item::File(key) => {
                     let parent = fs.file_parent(*key);
-                    self.cursor = self.folder_position(parent).unwrap_or(0);
+                    self.cursor = folder_index(fs, config, parent);
                     parent
                 }
             };
             fs.close_recurse(key);
         }
     }
-
-    /// Returns the cursor position of the given folder in the rendered items
-    fn folder_position(&self, key: FolderKey) -> Option<u16> {
-        self.items
-            .iter()
-            .position(|item| matches!(item, Item::Folder(k) if *k == key))
-            .map(|pos| pos as u16)
-    }
-
-    /// Recursively display files, folders and their children
-    fn recurse_lines<'a>(
-        &mut self,
-        fs: &'a Filesystem,
-        config: &Config,
-        folder: &Folder,
-        lines: &mut Vec<Line<'a>>,
-        remaining: &mut u16,
-        depth: usize,
-    ) {
-        for folder_key in &folder.child_folders {
-            if *remaining == 0 {
-                return;
-            }
-
-            let folder = &fs.folder(*folder_key);
-            if folder.hidden(config) {
-                continue;
-            }
-            lines.push(folder_line(folder, depth));
-            self.items.push(Item::Folder(*folder_key)); // track rendered folder key
-            *remaining -= 1;
-
-            if folder.open {
-                self.recurse_lines(fs, config, folder, lines, remaining, depth + 1);
-            }
-        }
-
-        for file_key in &folder.child_files {
-            if *remaining == 0 {
-                return;
-            }
-            let file = &fs.file(*file_key);
-            lines.push(file_line(file, depth));
-            self.items.push(Item::File(*file_key)); // track rendered file key
-            *remaining -= 1;
-        }
-    }
-}
-
-fn file_line(file: &File, depth: usize) -> Line<'_> {
-    let mut style = Style::default();
-    if let Some(color) = file.icon.color {
-        style = style.fg(Color::Rgb(color.r, color.g, color.b));
-    }
-
-    Line::from(vec![
-        Span::raw("  ".repeat(depth + 1)),
-        Span::styled(&file.icon.text, style),
-        Span::raw(&file.name),
-    ])
-}
-
-fn folder_line(folder: &Folder, depth: usize) -> Line<'_> {
-    Line::from(vec![
-        Span::raw("  ".repeat(depth)),
-        Span::raw(if folder.open { " " } else { " " }).gray(),
-        Span::raw(if folder.open { " " } else { " " }).blue(),
-        Span::raw(&folder.name).blue(),
-    ])
 }

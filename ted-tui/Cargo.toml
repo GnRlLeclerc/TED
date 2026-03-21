@@ -6,7 +6,9 @@ edition = "2024"
 [dependencies]
 futures = "0.3.31"
 crossterm.workspace = true
+log.workspace = true
 ratatui.workspace = true
+slotmap.workspace = true
 tokio.workspace = true
 ted-config.path = "../ted-config"
 ted-fs.path = "../ted-fs"

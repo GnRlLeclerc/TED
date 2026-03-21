@@ -23,6 +23,10 @@ fn scroll_margin() -> u16 {
     5
 }
 
+fn scroll_delta() -> u16 {
+    3
+}
+
 fn ignored_folders() -> Vec<String> {
     [".git", ".venv", "__pycache__"]
         .iter()
@@ -36,6 +40,8 @@ pub struct Config {
     pub double_click_duration: Duration,
     #[serde(default = "scroll_margin")]
     pub scroll_margin: u16,
+    #[serde(default = "scroll_delta")]
+    pub scroll_delta: u16,
     #[serde(default = "ignored_folders")]
     ignored_folders: Vec<String>,
 }

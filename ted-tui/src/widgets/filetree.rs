@@ -97,10 +97,9 @@ impl TedWidget for Filetree {
                 _ => return false,
             },
             Event::Mouse(mouse) => {
-                let index = mouse.row.saturating_sub(self.area.y) as usize + self.scroll;
-
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
+                        let index = mouse.row.saturating_sub(self.area.y) as usize + self.scroll;
                         let now = Instant::now();
 
                         // Double click detected, toggle if it's a folder
@@ -118,6 +117,8 @@ impl TedWidget for Filetree {
                         self.cursor = index;
                         self.last_click = now;
                     }
+                    MouseEventKind::ScrollUp => self.scroll_up(&state.config),
+                    MouseEventKind::ScrollDown => self.scroll_down(&state.config),
                     _ => return false,
                 }
             }
@@ -137,6 +138,23 @@ impl Filetree {
     fn down(&mut self) {
         self.cursor = self.cursor.saturating_add(1);
     }
+
+    /// Scroll one delta up. Move the cursor to stay within the visible area with
+    /// the configured margin.
+    fn scroll_up(&mut self, config: &Config) {
+        self.scroll = self.scroll.saturating_sub(config.scroll_delta as usize);
+        self.cursor = self.cursor.min(
+            (self.scroll + self.area.height as usize).saturating_sub(config.scroll_margin as usize),
+        );
+    }
+
+    /// Scroll one delta down. Move the cursor to stay within the visible area with
+    /// the configured margin.
+    fn scroll_down(&mut self, config: &Config) {
+        self.scroll = self.scroll.saturating_add(config.scroll_delta as usize);
+        self.cursor = self.cursor.max(self.scroll + config.scroll_margin as usize);
+    }
+
     /// Toggle the open state of the selected folder
     fn toggle(&mut self, fs: &mut Filesystem) {
         if let Some(Item::Folder(key)) = &self.selected {

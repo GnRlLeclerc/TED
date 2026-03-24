@@ -11,13 +11,15 @@ use ted_fs::{FSEvent, Filesystem};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
+    layouts::{Drawers, Side},
+    panes::Panes,
     state::State,
-    widgets::{Filetree, TedWidget},
+    widgets::{ClonableWidget, Filetree, Home, TedWidget},
 };
 
 pub struct App {
     state: State,
-    filetree: Filetree,
+    drawers: Drawers,
 
     // Receivers for various state events
     fs_recv: Receiver<FSEvent>,
@@ -36,7 +38,8 @@ impl App {
 
         Self {
             state: State::new(fs, config),
-            filetree: Filetree::new(),
+            drawers,
+
             fs_recv,
             config_recv,
             term_recv: EventStream::new().fuse(),
@@ -71,23 +74,13 @@ impl App {
     }
 
     fn handle_term_event(&mut self, event: Event) {
-        match event {
-            Event::Key(key) => {
-                match key.code {
-                    KeyCode::Char('q') => self.state.exit = true,
-                    _ => {}
-                };
-            }
-            _ => {}
-        }
-
-        self.filetree.handle(&event, &mut self.state);
+        self.drawers.handle(&event, &mut self.state);
     }
 
     fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let buffer = frame.buffer_mut();
 
-        self.filetree.render(area, buffer, &self.state);
+        self.drawers.render(area, buffer, &self.state);
     }
 }

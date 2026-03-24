@@ -1,6 +1,10 @@
 use std::time::Instant;
 
-use crate::{state::State, utils::scroll_to_cursor, widgets::TedWidget};
+use crate::{
+    state::State,
+    utils::{check_generation, scroll_to_cursor},
+    widgets::TedWidget,
+};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
 use ted_config::Config;

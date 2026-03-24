@@ -25,7 +25,7 @@ impl Border {
 impl Widget for Border {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self.direction {
-            Direction::Vertical => {
+            Direction::Horizontal => {
                 for x in area.left()..area.right() {
                     buf.set_string(x, area.top(), "─", self.style);
                 }
@@ -56,7 +56,7 @@ impl Widget for Border {
                     };
                 }
             }
-            Direction::Horizontal => {
+            Direction::Vertical => {
                 for y in area.top()..area.bottom() {
                     buf.set_string(area.left(), y, "│", self.style);
                 }

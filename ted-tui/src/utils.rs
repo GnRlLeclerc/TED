@@ -13,3 +13,39 @@ pub fn scroll_to_cursor(scroll: &mut usize, cursor: usize, area: Rect, config: &
         *scroll = cursor + margin - height + 1;
     }
 }
+
+/// Update neighbor pane sizes in order to drag their shared border to the mouse position.
+pub fn drag_to_cursor(
+    sizes: &mut [u16],
+    border: usize,
+    cursor: Position,
+    direction: Direction,
+    area: Rect,
+) {
+    // Compute relative cursor position inside the split along the direction
+    let rel_cursor = match direction {
+        Direction::Horizontal => cursor.x.saturating_sub(area.x),
+        Direction::Vertical => cursor.y.saturating_sub(area.y),
+    };
+
+    // Remove the previous panes and borders
+    let size = rel_cursor.saturating_sub(sizes[..border].iter().sum::<u16>() + border as u16);
+
+    // Max size = sum of the 2 panes being resized
+    let combined = sizes[border] + sizes[border + 1];
+    let size = size.min(sizes[border] + sizes[border + 1]);
+
+    sizes[border] = size;
+    sizes[border + 1] = combined - size;
+}
+
+/// Returns false if the generations are not matching.
+/// Update the widget generation to the state one.
+pub fn check_generation(widget: &mut usize, state: usize) -> bool {
+    if *widget != state {
+        *widget = state;
+        false
+    } else {
+        true
+    }
+}

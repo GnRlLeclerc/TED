@@ -3,8 +3,11 @@ use ratatui::prelude::*;
 
 mod border;
 mod filetree;
+mod home;
 
+pub use border::Border;
 pub use filetree::Filetree;
+pub use home::Home;
 
 use crate::state::State;
 
@@ -14,8 +17,30 @@ use crate::state::State;
 pub trait TedWidget {
     /// Render the widget based on the state.
     /// The widget is mutable in order to update UI-related states
-    fn render(&mut self, area: Rect, buf: &mut Buffer, fs: &State);
+    fn render(&mut self, area: Rect, buf: &mut Buffer, state: &State);
 
     /// Handle a crossterm event and update the state accordingly.
     fn handle(&mut self, event: &Event, state: &mut State) -> bool;
+
+    /// Returns an absolute cursor position to render.
+    /// Called recursively on focused children.
+    fn cursor(&self) -> Position {
+        Position::default()
+    }
+
+    fn boxed(self) -> Box<dyn TedWidget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
+}
+
+/// A widget that can be cloned in a type-erased way
+pub trait ClonableWidget: TedWidget {
+    /// Clone a widget. Needed for splitting panes.
+    fn clone(&self) -> Box<dyn ClonableWidget>;
+
+    // Close a widget (when its pane is removed).
+    fn close(&self) {}
 }

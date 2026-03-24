@@ -103,6 +103,7 @@ impl Filesystem {
             self.open(key);
         }
     }
+    }
 
     /// Handle an event emitted by a background filesystem task
     pub fn handle_event(&mut self, event: FSEvent) {

@@ -90,7 +90,19 @@ impl Drawers {
 
     /// Toggle a drawer open or closed.
     pub fn toggle(&mut self, drawer: Side) {
-        if let Some((_, open, _)) = &mut self.drawers[drawer] {
+        let opposite = self.displayed_size(drawer.opposite());
+
+        if let Some((_, open, size)) = &mut self.drawers[drawer] {
+            // Check area != 0 to not clamp to 0 on initial render,
+            // when the area defaults to 0.
+            if !*open && self.area.area() != 0 {
+                // Clamp size to avoid collision with the opposite drawer
+                *size = (*size).min(match drawer.vertical() {
+                    true => self.area.height.saturating_sub(opposite),
+                    false => self.area.width.saturating_sub(opposite),
+                });
+            }
+
             *open = !*open
         }
     }
@@ -265,32 +277,40 @@ impl TedWidget for Drawers {
                     }
                     MouseEventKind::Drag(_) => {
                         if let Some(side) = self.drag {
-                            // Compute offset if opposite drawer is open
-                            let offset = match &self.drawers[side.opposite()] {
-                                Some((_, open, size)) => {
-                                    if *open {
-                                        *size + 1
-                                    } else {
-                                        0
-                                    }
+                            let new_size = match side {
+                                Side::Top => cursor.y.saturating_sub(self.area.y).min(
+                                    self.area
+                                        .height
+                                        .saturating_sub(self.displayed_size(Side::Bottom)),
+                                ),
+                                Side::Bottom => {
+                                    self.area.bottom().saturating_sub(cursor.y + 1).min(
+                                        self.area
+                                            .height
+                                            .saturating_sub(self.displayed_size(Side::Top)),
+                                    )
                                 }
-                                None => 0,
+                                Side::Left => cursor.x.saturating_sub(self.area.x).min(
+                                    self.area
+                                        .width
+                                        .saturating_sub(self.displayed_size(Side::Right)),
+                                ),
+                                Side::Right => self.area.right().saturating_sub(cursor.x + 1).min(
+                                    self.area
+                                        .width
+                                        .saturating_sub(self.displayed_size(Side::Left)),
+                                ),
                             };
 
-                            if let Some((_, _, size)) = &mut self.drawers[side] {
-                                let max = self.area.height.saturating_sub(1 + offset);
-
-                                let rel = match side.vertical() {
-                                    true => cursor.y.saturating_sub(self.area.top()),
-                                    false => cursor.x.saturating_sub(self.area.left()),
-                                };
-                                *size = rel.min(max);
-
-                                return true;
+                            if let Some((_, open, size)) = &mut self.drawers[side]
+                                && *open
+                            {
+                                *size = new_size;
                             } else {
                                 self.drag = None;
-                                return false;
                             }
+
+                            return true;
                         }
                     }
                     MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -465,6 +485,18 @@ impl Drawers {
             && *open
         {
             self.focused = Some(side);
+        }
+    }
+
+    /// Returns the displayed size of the drawer + its border on the given side
+    /// Used to clamp drawer sizes to avoid collision with the opposite drawer.
+    fn displayed_size(&self, side: Side) -> u16 {
+        if let Some((_, open, size)) = &self.drawers[side]
+            && *open
+        {
+            *size + 1
+        } else {
+            0
         }
     }
 }

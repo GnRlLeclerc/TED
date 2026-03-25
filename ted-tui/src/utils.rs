@@ -38,14 +38,3 @@ pub fn drag_to_cursor(
     sizes[border] = size;
     sizes[border + 1] = combined - size;
 }
-
-/// Returns false if the generations are not matching.
-/// Update the widget generation to the state one.
-pub fn check_generation(widget: &mut usize, state: usize) -> bool {
-    if *widget != state {
-        *widget = state;
-        false
-    } else {
-        true
-    }
-}

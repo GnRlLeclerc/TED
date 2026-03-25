@@ -124,6 +124,8 @@ fn recurse_folder_index(
             if recurse_folder_index(fs, folder, config, needle, count) {
                 return true;
             }
+
+            *count += folder.child_files.len();
         }
     }
 

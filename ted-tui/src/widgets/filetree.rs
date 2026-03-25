@@ -4,13 +4,7 @@ use crate::{state::State, utils::scroll_to_cursor, widgets::TedWidget};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
 use ted_config::Config;
-use ted_fs::Filesystem;
-
-mod item;
-mod recurse;
-
-use item::Item;
-use recurse::{collect_items, count_items, folder_index};
+use ted_fs::{File, FileKey, Filesystem, Folder, FolderKey};
 
 /// Filetree widget
 pub struct Filetree {
@@ -190,4 +184,195 @@ impl Filetree {
             fs.close_recurse(key);
         }
     }
+}
+
+// ************************************************************************* //
+//                                 FILETREE ITEMS                            //
+// ************************************************************************* //
+
+/// A filetree item, either a file or a folder.
+#[derive(Clone, Copy)]
+enum Item {
+    File(FileKey),
+    Folder(FolderKey),
+}
+
+impl Item {
+    /// Produce a line to render for this item
+    fn line<'a>(&self, fs: &'a Filesystem, depth: usize) -> Line<'a> {
+        match self {
+            Item::File(key) => file_line(fs.file(*key), depth),
+            Item::Folder(key) => folder_line(fs.folder(*key), depth),
+        }
+    }
+}
+
+impl From<&FileKey> for Item {
+    fn from(key: &FileKey) -> Self {
+        Self::File(*key)
+    }
+}
+
+impl From<&FolderKey> for Item {
+    fn from(key: &FolderKey) -> Self {
+        Self::Folder(*key)
+    }
+}
+
+// ***************************************************** //
+//                        Rendering                      //
+// ***************************************************** //
+
+fn file_line(file: &File, depth: usize) -> Line<'_> {
+    let mut style = Style::default();
+    if let Some(color) = file.icon.color {
+        style = style.fg(Color::Rgb(color.r, color.g, color.b));
+    }
+
+    Line::from(vec![
+        Span::raw("  ".repeat(depth + 1)),
+        Span::styled(&file.icon.text, style),
+        Span::raw(&file.name),
+    ])
+}
+
+fn folder_line(folder: &Folder, depth: usize) -> Line<'_> {
+    Line::from(vec![
+        Span::raw("  ".repeat(depth)),
+        Span::raw(if folder.open { " " } else { " " }).gray(),
+        Span::raw(if folder.open { " " } else { " " }).blue(),
+        Span::raw(&folder.name).blue(),
+    ])
+}
+
+// ************************************************************************* //
+//                                RECURSION HELPERS                          //
+// ************************************************************************* //
+
+/// Recursively count the maximum number of visible items
+/// when displaying all folders and their children (if open)
+fn count_items(fs: &Filesystem, folder: &Folder, config: &Config) -> usize {
+    let mut count = folder.child_files.len();
+
+    for folder_key in &folder.child_folders {
+        let folder = fs.folder(*folder_key);
+        if folder.open {
+            count += count_items(fs, folder, config) + 1;
+        } else if !folder.hidden(config) {
+            count += 1;
+        }
+    }
+
+    count
+}
+
+/// Recursively collect items to display, with the given skip and take params.
+fn collect_items(
+    fs: &Filesystem,
+    folder: &Folder,
+    config: &Config,
+    items: &mut Vec<(Item, usize)>,
+    count: &mut usize,
+    depth: usize,
+    skip: usize,
+    take: usize,
+) {
+    // *************************************** //
+    //       Iterate through subfolders        //
+    // *************************************** //
+
+    for key in &folder.child_folders {
+        // Check if we have already taken enough lines
+        if *count >= skip + take {
+            return;
+        }
+
+        let folder = &fs.folder(*key);
+
+        // Skip the folder if it is hidden and not open
+        if folder.hidden(config) && !folder.open {
+            continue;
+        }
+
+        if *count >= skip {
+            items.push((key.into(), depth));
+        }
+
+        *count += 1;
+
+        if folder.open {
+            collect_items(fs, folder, config, items, count, depth + 1, skip, take);
+        }
+    }
+
+    // *************************************** //
+    //       Iterate through child files       //
+    // *************************************** //
+
+    let files = &folder.child_files;
+
+    // Skip the files if they are before the skip index
+    if *count + files.len() < skip {
+        *count += files.len();
+        return;
+    }
+
+    // Take the files if they are within the take range
+    let start = skip.saturating_sub(*count);
+    let end = (skip + take).saturating_sub(*count).min(files.len());
+    *count += files.len();
+
+    for key in &files[start..end] {
+        items.push((key.into(), depth));
+    }
+}
+
+/// Returns the cursor position of the given folder
+/// in the absolute visible filetree items list.
+/// Defaults to 0 if the folder was not found.
+fn folder_index(fs: &Filesystem, config: &Config, key: FolderKey) -> usize {
+    let mut index = 0;
+
+    if recurse_folder_index(fs, fs.root(), config, key, &mut index) {
+        index
+    } else {
+        0
+    }
+}
+
+/// Recusively search for the given folder key,
+/// counting the number of visible items along the way.
+fn recurse_folder_index(
+    fs: &Filesystem,
+    folder: &Folder,
+    config: &Config,
+    needle: FolderKey,
+    count: &mut usize,
+) -> bool {
+    let folders = &folder.child_folders;
+    for key in folders {
+        if *key == needle {
+            return true;
+        }
+
+        let folder = fs.folder(*key);
+
+        // Skip the folder if it is hidden and not open
+        if folder.hidden(config) && !folder.open {
+            continue;
+        }
+
+        // Count the folder itself
+        *count += 1;
+
+        if folder.open {
+            if recurse_folder_index(fs, folder, config, needle, count) {
+                return true;
+            }
+
+            *count += folder.child_files.len();
+        }
+    }
+
+    false
 }

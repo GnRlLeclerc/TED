@@ -179,7 +179,9 @@ impl Filesystem {
     pub fn down(&mut self) {
         self.down_n(1);
     }
-    pub fn peek(&mut self, item: Item) {
+
+    pub fn peek<T: Into<Item>>(&mut self, item: T) {
+        let item = item.into();
         if let Some(mut peeked) = self.peeked {
             if peeked == item {
                 return;
@@ -195,10 +197,17 @@ impl Filesystem {
         self.peeked = Some(item);
 
         // Peek parents
-        let mut peeked = item;
-        while let Some(parent) = peeked.parent(self) {
-            self.folders[parent].peeked = true;
-            peeked = Item::Folder(parent);
+        match item.parent(self) {
+            Some(mut parent) => loop {
+                self.folders[parent].peeked = true;
+                parent = match self.folders[parent].parent {
+                    Some(p) => p,
+                    None => break,
+                };
+            },
+            None => {
+                // TODO: this is an orphan item. Trigger the loading of its parents.
+            }
         }
 
         self.rebuild_view();
@@ -272,10 +281,26 @@ impl Filesystem {
         if self.folders[key].init {
             return;
         }
-        let file_ids = files
-            .into_iter()
-            .map(|file| self.files.insert(file))
-            .collect::<Vec<_>>();
+
+        let file_ids = match self.orphans.remove(&self.folders[key].path) {
+            Some(mut orphans) => files
+                .into_iter()
+                .map(|file| {
+                    match orphans
+                        .iter()
+                        .position(|k| self.files[*k].name == file.name)
+                    {
+                        Some(i) => orphans.swap_remove(i),
+                        None => self.files.insert(file),
+                    }
+                })
+                .collect::<Vec<_>>(),
+            None => files
+                .into_iter()
+                .map(|file| self.files.insert(file))
+                .collect::<Vec<_>>(),
+        };
+
         let folder_ids = folders
             .into_iter()
             .map(|folder| self.folders.insert(folder))

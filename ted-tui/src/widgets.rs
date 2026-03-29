@@ -41,6 +41,9 @@ pub trait ClonableWidget: TedWidget {
     /// Clone a widget. Needed for splitting panes.
     fn clone(&self) -> Box<dyn ClonableWidget>;
 
-    // Close a widget (when its pane is removed).
+    /// Close a widget (when its pane is removed).
     fn close(&self) {}
+
+    /// On pane focus
+    fn focus(&mut self, _: &mut State) {}
 }

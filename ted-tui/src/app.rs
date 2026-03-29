@@ -11,8 +11,7 @@ use ted_fs::{FSEvent, Filesystem};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    layouts::{Drawers, Side},
-    panes::Panes,
+    layouts::{Drawers, Panes, Side},
     state::State,
     widgets::{ClonableWidget, Filetree, Home, TedWidget},
 };
@@ -38,8 +37,10 @@ impl App {
         let (fs, fs_recv) = Filesystem::new();
         let (config, config_recv, config_watcher) = Config::new();
 
+        let mut state = State::new(fs, config);
+
         Self {
-            state: State::new(fs, config),
+            state,
             editor: drawers,
 
             fs_recv,

@@ -36,7 +36,10 @@ impl Side {
     }
 }
 
-/// Top, bottom, left and right drawers, around a central widget.
+/// Top, bottom, left and right drawers, around a central layout widget.
+///
+/// In order to make the central layout accessible in a non-type erased way,
+/// it is generic instead of a Box dyn.
 ///
 /// ┌────────────────────────────────┐
 /// │              Top               │
@@ -48,12 +51,12 @@ impl Side {
 /// │             Bottom             │
 /// └────────────────────────────────┘
 ///
-pub struct Drawers {
+pub struct Drawers<T: TedWidget> {
     area: Rect,
     /// If none, the main widget is focused
     focused: Option<Side>,
     drag: Option<Side>,
-    main: Box<dyn TedWidget>,
+    pub main: T,
     /// (widget, open) tuples
     drawers: EnumMap<Side, Option<(Box<dyn TedWidget>, bool, u16)>>,
     /// An optional overlay
@@ -64,8 +67,8 @@ pub struct Drawers {
 //                                 PUBLIC API                                //
 // ************************************************************************* //
 
-impl Drawers {
-    pub fn new(main: Box<dyn TedWidget>) -> Self {
+impl<T: TedWidget> Drawers<T> {
+    pub fn new(main: T) -> Self {
         let drawers = enum_map! {
             Side::Top => None,
             Side::Bottom => None,
@@ -117,7 +120,7 @@ impl Drawers {
 //                                    WIDGET                                 //
 // ************************************************************************* //
 
-impl TedWidget for Drawers {
+impl<T: TedWidget> TedWidget for Drawers<T> {
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &State) {
         self.area = area;
 
@@ -405,7 +408,7 @@ impl TedWidget for Drawers {
 //                              INTERNAL HELPERS                             //
 // ************************************************************************* //
 
-impl Drawers {
+impl<T: TedWidget> Drawers<T> {
     /// Returns the side of the clicked drawer,
     /// and whether the click is on the border (for dragging) or not.
     fn click_target(&self, cursor: Position) -> Option<(Side, bool)> {

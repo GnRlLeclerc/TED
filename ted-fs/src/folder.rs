@@ -15,6 +15,8 @@ pub struct Folder {
     hidden: Option<bool>,
     /// Current open state in UI
     pub open: bool,
+    /// Whether the folder should be temporarily peeked open
+    pub peeked: bool,
     /// Whether the folder has already been loaded once
     pub init: bool,
 }
@@ -34,6 +36,7 @@ impl Folder {
             child_folders: vec![],
             hidden: None,
             open: false,
+            peeked: false,
             init: false,
         }
     }

@@ -19,7 +19,9 @@ use crate::{
 
 pub struct App {
     state: State,
-    drawers: Drawers,
+
+    /// Editor screen
+    editor: Drawers<Panes>,
 
     // Receivers for various state events
     fs_recv: Receiver<FSEvent>,
@@ -38,7 +40,7 @@ impl App {
 
         Self {
             state: State::new(fs, config),
-            drawers,
+            editor: drawers,
 
             fs_recv,
             config_recv,
@@ -74,13 +76,13 @@ impl App {
     }
 
     fn handle_term_event(&mut self, event: Event) {
-        self.drawers.handle(&event, &mut self.state);
+        self.editor.handle(&event, &mut self.state);
     }
 
     fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let buffer = frame.buffer_mut();
 
-        self.drawers.render(area, buffer, &self.state);
+        self.editor.render(area, buffer, &self.state);
     }
 }

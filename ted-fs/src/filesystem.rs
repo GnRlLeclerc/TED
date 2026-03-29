@@ -7,19 +7,33 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use slotmap::SlotMap;
 
-use crate::{FSEvent, File, FileKey, Folder, FolderKey};
+use crate::{FSEvent, File, FileKey, Folder, FolderKey, Item};
 
 pub struct Filesystem {
+    /// File tree cursor
+    /// Stored here such that any widget can set the selected item
+    /// instead of it being hidden away in the filetree widget.
+    selected: usize,
+    /// Currently peeked item: its parent folders are temporarily
+    /// "peeked", which means that they are displayed as open in the filetree
+    /// until another item is peeked.
+    peeked: Option<Item>,
+
+    /// Cached flattened view of the filetree for quick rendering and navigation.
+    /// The usize is the depth (for indentation)
+    /// Is recomputed on create/delete/move/rename/open/close
+    view: Vec<(Item, usize)>,
+
     root: FolderKey,
     files: SlotMap<FileKey, File>,
     folders: SlotMap<FolderKey, Folder>,
     folder_paths: HashMap<PathBuf, FolderKey>,
     unsaved: HashSet<FileKey>,
-    /// Peeked files by parent folder.
+    /// Orphan files by parent folder.
     /// The keys are referenced here until the parent folder
     /// is opened and loaded in the `folders` slotmap.
     /// This allows caching parsed files displayed in the file picker.
-    peeked: HashMap<PathBuf, Vec<FileKey>>,
+    orphans: HashMap<PathBuf, Vec<FileKey>>,
     sender: Sender<FSEvent>,
 }
 
@@ -33,12 +47,15 @@ impl Filesystem {
         let root = folders.insert(Folder::new(PathBuf::from("."), None));
 
         let fs = Self {
+            selected: 0,
+            peeked: None,
+            view: vec![],
             root,
             files: SlotMap::with_key(),
             folders,
             folder_paths: HashMap::new(),
             unsaved: HashSet::new(),
-            peeked: HashMap::new(),
+            orphans: HashMap::new(),
 
             sender: sender.clone(),
         };
@@ -78,12 +95,15 @@ impl Filesystem {
             self.folders[key].open = true;
             if !self.folders[key].init {
                 self.load_folder(self.sender.clone(), key);
+            } else {
+                self.rebuild_view();
             }
         }
     }
 
     pub fn close(&mut self, key: FolderKey) {
         self.folders[key].open = false;
+        self.rebuild_view();
     }
 
     /// Recursively close children, even through unopened folders.
@@ -94,6 +114,7 @@ impl Filesystem {
             let child = self.folders[key].child_folders[i];
             self.close_recurse(child);
         }
+        self.rebuild_view();
     }
 
     pub fn toggle(&mut self, key: FolderKey) {
@@ -102,7 +123,85 @@ impl Filesystem {
         } else {
             self.open(key);
         }
+        self.rebuild_view();
     }
+
+    pub fn view(&self) -> &[(Item, usize)] {
+        &self.view
+    }
+
+    // ************************************************* //
+    //                      SELECTION                    //
+    // ************************************************* //
+
+    pub fn select_item<T: Into<Item>>(&mut self, item: T) {
+        let item = item.into();
+        if let Some(index) = self.view.iter().position(|(i, _)| *i == item) {
+            self.selected = index;
+        }
+    }
+
+    pub fn select_index(&mut self, index: usize) {
+        self.selected = index.min(self.view.len().saturating_sub(1));
+    }
+
+    pub fn selected_item(&self) -> Option<Item> {
+        if self.selected >= self.view.len() {
+            None
+        } else {
+            Some(self.view[self.selected].0)
+        }
+    }
+
+    pub fn selected_index(&self) -> usize {
+        self.selected
+    }
+
+    // ************************************************* //
+    //                       MOVEMENT                    //
+    // ************************************************* //
+
+    pub fn up_n(&mut self, n: usize) {
+        self.selected = self.selected.saturating_sub(n);
+    }
+
+    pub fn down_n(&mut self, n: usize) {
+        self.selected = self
+            .selected
+            .saturating_add(n)
+            .min(self.view.len().saturating_sub(1));
+    }
+
+    pub fn up(&mut self) {
+        self.up_n(1);
+    }
+
+    pub fn down(&mut self) {
+        self.down_n(1);
+    }
+    pub fn peek(&mut self, item: Item) {
+        if let Some(mut peeked) = self.peeked {
+            if peeked == item {
+                return;
+            }
+
+            // Unpeek parents
+            while let Some(parent) = peeked.parent(self) {
+                self.folders[parent].peeked = false;
+                peeked = Item::Folder(parent);
+            }
+        }
+
+        self.peeked = Some(item);
+
+        // Peek parents
+        let mut peeked = item;
+        while let Some(parent) = peeked.parent(self) {
+            self.folders[parent].peeked = true;
+            peeked = Item::Folder(parent);
+        }
+
+        self.rebuild_view();
     }
 
     /// Handle an event emitted by a background filesystem task
@@ -187,5 +286,34 @@ impl Filesystem {
         self.folders[key].init = true;
         self.folder_paths
             .insert(self.folders[key].path.clone(), key);
+
+        self.rebuild_view();
+    }
+
+    fn rebuild_view(&mut self) {
+        self.view.clear();
+        recurse_view(&mut self.view, &self.files, &self.folders, self.root, 0);
+        self.selected = self.selected.min(self.view.len().saturating_sub(1));
+    }
+}
+
+fn recurse_view(
+    view: &mut Vec<(Item, usize)>,
+    files: &SlotMap<FileKey, File>,
+    folders: &SlotMap<FolderKey, Folder>,
+    key: FolderKey,
+    depth: usize,
+) {
+    // Traverse folders
+    for folder in &folders[key].child_folders {
+        view.push(((*folder).into(), depth));
+        if folders[*folder].open || folders[*folder].peeked {
+            recurse_view(view, files, folders, *folder, depth + 1);
+        }
+    }
+
+    // Traverse files
+    for file in &folders[key].child_files {
+        view.push(((*file).into(), depth));
     }
 }

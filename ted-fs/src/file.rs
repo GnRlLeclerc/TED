@@ -24,7 +24,7 @@ impl Devicon {
 
 pub struct File {
     /// Absolute path
-    path: PathBuf,
+    pub path: PathBuf,
     pub parent: FolderKey,
     pub name: String,
     pub buffer: Option<Rope>,

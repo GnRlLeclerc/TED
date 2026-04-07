@@ -194,13 +194,7 @@ impl TedWidget for Panes {
                 let cursor = Position::new(mouse.column, mouse.row);
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
-                        if let Some(hit) = recurse_click(
-                            cursor,
-                            self.root,
-                            &self.splits,
-                            &mut self.focused,
-                            &mut self.drag,
-                        ) {
+                        if let Some(hit) = self.recurse_click(cursor, self.root) {
                             match hit {
                                 ClickResult::Pane(pane) => {
                                     self.focused = Some(pane);
@@ -253,55 +247,6 @@ impl TedWidget for Panes {
 enum ClickResult {
     Pane(PaneKey),
     Border(SplitKey, usize),
-}
-
-/// Recurse a click through the splits in order to:
-/// - start dragging a border
-/// - set the focused pane
-///
-/// Events should be propagated to the focused pane if drag = None
-fn recurse_click(
-    pos: Position,
-    key: SplitKey,
-    splits: &SlotMap<SplitKey, Split>,
-    focused: &mut Option<PaneKey>,
-    drag: &mut Option<(SplitKey, usize)>,
-) -> Option<ClickResult> {
-    let split = &splits[key];
-
-    // Make the click relative to the split
-    let rel = match split.direction {
-        Direction::Horizontal => pos.x - split.area.x,
-        Direction::Vertical => pos.y - split.area.y,
-    };
-
-    let mut offset = 0;
-    for i in 0..split.children.len() {
-        offset += split.sizes[i];
-
-        // Check for pane collision
-        if rel < offset {
-            match split.children[i] {
-                Child::Pane(pane) => {
-                    return Some(ClickResult::Pane(pane));
-                }
-                Child::Split(child_key) => {
-                    if splits[child_key].area.contains(pos) {
-                        return recurse_click(pos, child_key, splits, focused, drag);
-                    }
-                }
-            }
-        }
-
-        offset += 1; // border width
-
-        // Check for border collision
-        if rel < offset {
-            return Some(ClickResult::Border(key, i));
-        }
-    }
-
-    None
 }
 
 impl Panes {
@@ -382,6 +327,49 @@ impl Panes {
         }
 
         false
+    }
+
+    /// Recurse a click through the splits in order to:
+    /// - start dragging a border
+    /// - set the focused pane
+    ///
+    /// Events should be propagated to the focused pane if drag = None
+    fn recurse_click(&self, pos: Position, key: SplitKey) -> Option<ClickResult> {
+        let split = &self.splits[key];
+
+        // Make the click relative to the split
+        let rel = match split.direction {
+            Direction::Horizontal => pos.x.saturating_sub(split.area.x),
+            Direction::Vertical => pos.y.saturating_sub(split.area.y),
+        };
+
+        let mut offset = 0;
+        for i in 0..split.children.len() {
+            offset += split.sizes[i];
+
+            // Check for pane collision
+            if rel < offset {
+                match split.children[i] {
+                    Child::Pane(pane) => {
+                        return Some(ClickResult::Pane(pane));
+                    }
+                    Child::Split(child_key) => {
+                        if self.splits[child_key].area.contains(pos) {
+                            return self.recurse_click(pos, child_key);
+                        }
+                    }
+                }
+            }
+
+            offset += 1; // border width
+
+            // Check for border collision
+            if rel < offset {
+                return Some(ClickResult::Border(key, i));
+            }
+        }
+
+        None
     }
 
     fn focus(&mut self, key: PaneKey, state: &mut State) {

@@ -27,7 +27,8 @@ pub struct Filesystem {
     root: FolderKey,
     files: SlotMap<FileKey, File>,
     folders: SlotMap<FolderKey, Folder>,
-    folder_paths: HashMap<PathBuf, FolderKey>,
+    /// Lookup map by path for easy fs event handling
+    paths: HashMap<PathBuf, Item>,
     unsaved: HashSet<FileKey>,
     /// Orphan files by parent folder.
     /// The keys are referenced here until the parent folder
@@ -53,7 +54,7 @@ impl Filesystem {
             root,
             files: SlotMap::with_key(),
             folders,
-            folder_paths: HashMap::new(),
+            paths: HashMap::new(),
             unsaved: HashSet::new(),
             orphans: HashMap::new(),
 
@@ -282,35 +283,17 @@ impl Filesystem {
             return;
         }
 
-        let file_ids = match self.orphans.remove(&self.folders[key].path) {
-            Some(mut orphans) => files
-                .into_iter()
-                .map(|file| {
-                    match orphans
-                        .iter()
-                        .position(|k| self.files[*k].name == file.name)
-                    {
-                        Some(i) => orphans.swap_remove(i),
-                        None => self.files.insert(file),
-                    }
-                })
-                .collect::<Vec<_>>(),
-            None => files
-                .into_iter()
-                .map(|file| self.files.insert(file))
-                .collect::<Vec<_>>(),
-        };
-
-        let folder_ids = folders
-            .into_iter()
-            .map(|folder| self.folders.insert(folder))
-            .collect::<Vec<_>>();
-
-        self.folders[key].child_files = file_ids;
-        self.folders[key].child_folders = folder_ids;
+        self.folders[key].child_files = self.insert_files(files, key);
+        self.folders[key].child_folders = self.insert_folders(folders);
         self.folders[key].init = true;
-        self.folder_paths
-            .insert(self.folders[key].path.clone(), key);
+        // Insert child folders in the path lookup
+        self.paths
+            .extend(self.folders[key].child_folders.iter().map(|child| {
+                (
+                    self.folders[*child].path.clone().into(),
+                    Item::Folder(*child),
+                )
+            }));
 
         self.rebuild_view();
     }
@@ -319,6 +302,49 @@ impl Filesystem {
         self.view.clear();
         recurse_view(&mut self.view, &self.files, &self.folders, self.root, 0);
         self.selected = self.selected.min(self.view.len().saturating_sub(1));
+    }
+
+    /// Insert a vec of files into the filesystem files + path lookup.
+    /// Replaces incoming entries that already are in the orphans list
+    /// with the existing keys, and clears the orphans for this folder.
+    /// Returns the keys for injection into the parent folder struct.
+    fn insert_files(&mut self, files: Vec<File>, parent: FolderKey) -> Vec<FileKey> {
+        let mut keys = Vec::with_capacity(files.len());
+
+        match self.orphans.remove(&self.folders[parent].path) {
+            Some(mut orphans) => self.paths.extend(files.into_iter().map(|file| {
+                let key = match orphans
+                    .iter()
+                    .position(|k| self.files[*k].name == file.name)
+                {
+                    Some(i) => orphans.swap_remove(i),
+                    None => self.files.insert(file),
+                };
+                keys.push(key);
+                (self.files[key].path.clone(), Item::File(key))
+            })),
+            None => self.paths.extend(files.into_iter().map(|file| {
+                let key = self.files.insert(file);
+                keys.push(key);
+                (self.files[key].path.clone(), Item::File(key))
+            })),
+        };
+
+        keys
+    }
+
+    /// Insert a vec of folders into the filesystem folders + path lookup.
+    /// Returns the keys for injection into the parent folder struct.
+    fn insert_folders(&mut self, folders: Vec<Folder>) -> Vec<FolderKey> {
+        let mut keys = Vec::with_capacity(folders.len());
+
+        self.paths.extend(folders.into_iter().map(|folder| {
+            let key = self.folders.insert(folder);
+            keys.push(key);
+            (self.folders[key].path.clone(), Item::Folder(key))
+        }));
+
+        keys
     }
 }
 

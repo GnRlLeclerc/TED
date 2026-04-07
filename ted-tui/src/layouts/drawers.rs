@@ -364,26 +364,26 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
             match key.code {
                 // Focus left
                 KeyCode::Char('h') => match self.focused {
-                    Some(Side::Right) => self.focused = None,
-                    None => self.focus(Side::Left),
+                    Some(Side::Right) => self.focus_main(state),
+                    None => self.focus_drawer(Side::Left, state),
                     _ => {}
                 },
                 // Focus right
                 KeyCode::Char('l') => match self.focused {
-                    Some(Side::Left) => self.focused = None,
-                    None => self.focus(Side::Right),
+                    Some(Side::Left) => self.focus_main(state),
+                    None => self.focus_drawer(Side::Right, state),
                     _ => {}
                 },
                 // Focus up
                 KeyCode::Char('k') => match self.focused {
-                    Some(Side::Bottom) => self.focus_horizontal(state.cursor.get()),
-                    None => self.focus(Side::Top),
+                    Some(Side::Bottom) => self.focus_horizontal(state),
+                    None => self.focus_drawer(Side::Top, state),
                     _ => {}
                 },
                 // Focus down
                 KeyCode::Char('j') => match self.focused {
-                    Some(Side::Top) => self.focus_horizontal(state.cursor.get()),
-                    None => self.focus(Side::Bottom),
+                    Some(Side::Top) => self.focus_horizontal(state),
+                    None => self.focus_drawer(Side::Bottom, state),
                     _ => {}
                 },
                 _ => {}
@@ -457,13 +457,14 @@ impl<T: TedWidget> Drawers<T> {
     /// Used when moving the focus up from the bottom drawer or down from the top drawer,
     /// which can fall into either the left, center or right widget depending on the cursor
     /// position.
-    fn focus_horizontal(&mut self, cursor: Position) {
+    fn focus_horizontal(&mut self, state: &mut State) {
+        let cursor = state.cursor.get();
         if let Some((_, open, size)) = &self.drawers[Side::Left]
             && *open
         {
             let rel = cursor.x.saturating_sub(self.area.x);
             if rel <= *size + 1 {
-                self.focused = Some(Side::Left);
+                self.focus_drawer(Side::Left, state);
                 return;
             }
         }
@@ -473,7 +474,7 @@ impl<T: TedWidget> Drawers<T> {
         {
             let rel = self.area.right().saturating_sub(cursor.x);
             if rel <= *size + 1 {
-                self.focused = Some(Side::Right);
+                self.focus_drawer(Side::Right, state);
                 return;
             }
         }
@@ -483,12 +484,18 @@ impl<T: TedWidget> Drawers<T> {
 
     /// Focus a drawer, only if it exists and is open.
     /// Else, do nothing.
-    fn focus(&mut self, side: Side) {
-        if let Some((_, open, _)) = &self.drawers[side]
+    fn focus_drawer(&mut self, side: Side, state: &mut State) {
+        if let Some((drawer, open, _)) = &mut self.drawers[side]
             && *open
         {
             self.focused = Some(side);
+            drawer.focus(state);
         }
+    }
+
+    fn focus_main(&mut self, state: &mut State) {
+        self.focused = None;
+        self.main.focus(state);
     }
 
     /// Returns the displayed size of the drawer + its border on the given side

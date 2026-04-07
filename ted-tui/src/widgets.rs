@@ -22,11 +22,8 @@ pub trait TedWidget {
     /// Handle a crossterm event and update the state accordingly.
     fn handle(&mut self, event: &Event, state: &mut State) -> bool;
 
-    /// Returns an absolute cursor position to render.
-    /// Called recursively on focused children.
-    fn cursor(&self) -> Position {
-        Position::default()
-    }
+    /// On widget focus
+    fn focus(&mut self, _: &mut State) {}
 
     fn boxed(self) -> Box<dyn TedWidget>
     where
@@ -43,7 +40,4 @@ pub trait ClonableWidget: TedWidget {
 
     /// Close a widget (when its pane is removed).
     fn close(&self) {}
-
-    /// On pane focus
-    fn focus(&mut self, _: &mut State) {}
 }

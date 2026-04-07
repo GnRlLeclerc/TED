@@ -25,14 +25,15 @@ impl Devicon {
 pub struct File {
     /// Absolute path
     pub path: PathBuf,
-    pub parent: FolderKey,
+    /// Optional parent (is None when the file is loaded as a peeked orphan)
+    pub parent: Option<FolderKey>,
     pub name: String,
     pub buffer: Option<Rope>,
     pub icon: Devicon,
 }
 
 impl File {
-    pub fn new(path: PathBuf, parent: FolderKey) -> Self {
+    pub fn new(path: PathBuf, parent: Option<FolderKey>) -> Self {
         let icon = Devicon::new(&path);
         let name = path
             .file_name()

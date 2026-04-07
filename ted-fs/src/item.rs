@@ -10,7 +10,7 @@ pub enum Item {
 impl Item {
     pub fn parent(&self, fs: &Filesystem) -> Option<FolderKey> {
         match self {
-            Self::File(key) => Some(fs.file_parent(*key)),
+            Self::File(key) => fs.file_parent(*key),
             Self::Folder(key) => fs.folder_parent(*key),
         }
     }

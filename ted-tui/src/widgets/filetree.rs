@@ -144,11 +144,16 @@ impl Filetree {
                         }
                     }
                 }
-                Item::File(key) => {
-                    let parent = fs.file_parent(key);
-                    fs.select_item(parent);
-                    parent
-                }
+                Item::File(key) => match fs.file_parent(key) {
+                    Some(parent) => {
+                        fs.select_item(parent);
+                        parent
+                    }
+                    // This is a peeked orphan file, it has no parents
+                    None => {
+                        return;
+                    }
+                },
             };
             fs.close_recurse(key);
         }

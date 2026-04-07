@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -30,11 +30,6 @@ pub struct Filesystem {
     /// Lookup map by path for easy fs event handling
     paths: HashMap<PathBuf, Item>,
     unsaved: HashSet<FileKey>,
-    /// Orphan files by parent folder.
-    /// The keys are referenced here until the parent folder
-    /// is opened and loaded in the `folders` slotmap.
-    /// This allows caching parsed files displayed in the file picker.
-    orphans: HashMap<PathBuf, Vec<FileKey>>,
     sender: Sender<FSEvent>,
 }
 
@@ -56,12 +51,11 @@ impl Filesystem {
             folders,
             paths: HashMap::new(),
             unsaved: HashSet::new(),
-            orphans: HashMap::new(),
 
-            sender: sender.clone(),
+            sender: sender,
         };
 
-        fs.load_folder(sender, root);
+        fs.load_folder(root);
         (fs, receiver)
     }
 
@@ -81,7 +75,7 @@ impl Filesystem {
         &self.files[key]
     }
 
-    pub fn file_parent(&self, key: FileKey) -> FolderKey {
+    pub fn file_parent(&self, key: FileKey) -> Option<FolderKey> {
         self.files[key].parent
     }
 
@@ -95,7 +89,7 @@ impl Filesystem {
         } else {
             self.folders[key].open = true;
             if !self.folders[key].init {
-                self.load_folder(self.sender.clone(), key);
+                self.load_folder(key);
             } else {
                 self.rebuild_view();
             }
@@ -181,6 +175,21 @@ impl Filesystem {
         self.down_n(1);
     }
 
+    /// Peek an item by its path.
+    /// Lazy-load it if it is not loaded yet.
+    /// Used by the file picker.
+    /// Contrary to peek(), this function does not trigger
+    /// the lazy loading of the item's parents.
+    pub fn peek_path(&mut self, path: &Path) {
+        match self.paths.get(path) {
+            Some(item) => self.peek(*item),
+            None => self.load_orphan(path.to_path_buf()),
+        }
+    }
+
+    /// Peek an item by its key (used by editor panes to focus filetree items)
+    /// Also triggers loading the parents of the item if they are not loaded yet,
+    /// for displaying in the filetree.
     pub fn peek<T: Into<Item>>(&mut self, item: T) {
         let item = item.into();
         if let Some(mut peeked) = self.peeked {
@@ -222,6 +231,7 @@ impl Filesystem {
                 files,
                 folders,
             } => self.init_folder(key, files, folders),
+            FSEvent::OrphanLoaded(file) => self.init_orphan(file),
         }
     }
 }
@@ -232,7 +242,8 @@ impl Filesystem {
 
 impl Filesystem {
     /// Load the contents of a folder asynchronously in the background
-    fn load_folder(&self, sender: Sender<FSEvent>, key: FolderKey) {
+    fn load_folder(&self, key: FolderKey) {
+        let sender = self.sender.clone();
         let path = self.folders[key].path.clone();
         tokio::spawn(async move {
             let mut files: Vec<File> = vec![];
@@ -245,7 +256,7 @@ impl Filesystem {
                         if path.is_dir() {
                             folders.push(Folder::new(path, Some(key)));
                         } else {
-                            files.push(File::new(path, key));
+                            files.push(File::new(path, Some(key)));
                         }
                     }
 
@@ -269,6 +280,20 @@ impl Filesystem {
             }
         });
     }
+
+    /// Load an orphan file (peeked in the file picker) lazily.
+    fn load_orphan(&mut self, path: PathBuf) {
+        let sender = self.sender.clone();
+        tokio::spawn(async move {
+            if !path.is_file() {
+                log::error!("Failed to load orphan: {} is not a file", path.display());
+                return;
+            }
+
+            let file = File::new(path, None);
+            sender.send(FSEvent::OrphanLoaded(file)).await;
+        });
+    }
 }
 
 // ************************************************************************* //
@@ -283,7 +308,7 @@ impl Filesystem {
             return;
         }
 
-        self.folders[key].child_files = self.insert_files(files, key);
+        self.folders[key].child_files = self.insert_files(files);
         self.folders[key].child_folders = self.insert_folders(folders);
         self.folders[key].init = true;
         // Insert child folders in the path lookup
@@ -298,6 +323,13 @@ impl Filesystem {
         self.rebuild_view();
     }
 
+    /// Initialize an orphan file that is being lazily loaded.
+    fn init_orphan(&mut self, file: File) {
+        let key = self.files.insert(file);
+        self.paths
+            .insert(self.files[key].path.clone(), Item::File(key));
+    }
+
     fn rebuild_view(&mut self) {
         self.view.clear();
         recurse_view(&mut self.view, &self.files, &self.folders, self.root, 0);
@@ -308,27 +340,23 @@ impl Filesystem {
     /// Replaces incoming entries that already are in the orphans list
     /// with the existing keys, and clears the orphans for this folder.
     /// Returns the keys for injection into the parent folder struct.
-    fn insert_files(&mut self, files: Vec<File>, parent: FolderKey) -> Vec<FileKey> {
+    fn insert_files(&mut self, files: Vec<File>) -> Vec<FileKey> {
         let mut keys = Vec::with_capacity(files.len());
 
-        match self.orphans.remove(&self.folders[parent].path) {
-            Some(mut orphans) => self.paths.extend(files.into_iter().map(|file| {
-                let key = match orphans
-                    .iter()
-                    .position(|k| self.files[*k].name == file.name)
-                {
-                    Some(i) => orphans.swap_remove(i),
-                    None => self.files.insert(file),
-                };
-                keys.push(key);
-                (self.files[key].path.clone(), Item::File(key))
-            })),
-            None => self.paths.extend(files.into_iter().map(|file| {
-                let key = self.files.insert(file);
-                keys.push(key);
-                (self.files[key].path.clone(), Item::File(key))
-            })),
-        };
+        files.into_iter().for_each(|file| {
+            let key = match self.paths.get(&file.path) {
+                Some(Item::File(key)) => *key,
+                None => self.files.insert(file),
+                // If the incoming file has the same path as an existing folder, skip it
+                _ => return,
+            };
+            keys.push(key)
+        });
+
+        self.paths.extend(
+            keys.iter()
+                .map(|key| (self.files[*key].path.clone(), Item::File(*key))),
+        );
 
         keys
     }

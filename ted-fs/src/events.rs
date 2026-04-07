@@ -7,4 +7,5 @@ pub enum FSEvent {
         files: Vec<File>,
         folders: Vec<Folder>,
     },
+    OrphanLoaded(File),
 }

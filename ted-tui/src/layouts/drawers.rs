@@ -393,13 +393,13 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         false
     }
 
-    fn cursor(&self) -> Position {
+    fn cursor(&self, state: &State) -> Position {
         if let Some(focused) = &self.focused
             && let Some((drawer, _, _)) = &self.drawers[*focused]
         {
-            drawer.cursor()
+            drawer.cursor(state)
         } else {
-            self.main.cursor()
+            self.main.cursor(state)
         }
     }
 }
@@ -458,7 +458,7 @@ impl<T: TedWidget> Drawers<T> {
     /// which can fall into either the left, center or right widget depending on the cursor
     /// position.
     fn focus_horizontal(&mut self, state: &mut State) {
-        let cursor = state.cursor.get();
+        let cursor = state.cursor;
         if let Some((_, open, size)) = &self.drawers[Side::Left]
             && *open
         {

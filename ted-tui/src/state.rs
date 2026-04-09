@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use ratatui::prelude::*;
 use ted_config::Config;
 use ted_fs::Filesystem;
@@ -10,7 +8,7 @@ pub struct State {
     pub fs: Filesystem,
     pub config: Config,
     /// Absolute cursor position, rendered each frame
-    pub cursor: Cell<Position>,
+    pub cursor: Position,
 }
 
 impl State {
@@ -19,7 +17,7 @@ impl State {
             exit: false,
             fs,
             config,
-            cursor: Cell::new(Position::default()),
+            cursor: Position::default(),
         }
     }
 }

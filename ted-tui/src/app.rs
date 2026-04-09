@@ -1,7 +1,7 @@
 use std::io::stdout;
 
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
+    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, MouseEventKind},
     execute,
 };
 use futures::{StreamExt, stream::Fuse};
@@ -54,30 +54,34 @@ impl App {
     pub async fn run(&mut self) -> std::io::Result<()> {
         execute!(stdout(), EnableMouseCapture)?;
         let mut terminal = ratatui::init();
+        execute!(stdout(), SetCursorStyle::SteadyBlock)?;
+
+        // Initial rendering
+        terminal.draw(|frame| self.render(frame))?;
+
         while !self.state.exit {
+            tokio::select! {
+                Some(Ok(event)) = self.term_recv.next() => {
+                    if !self.handle_term_event(event) {
+                        continue;
+                    }
+                }
+                Some(event) = self.fs_recv.recv() => {
+                    self.state.fs.handle_event(event);
+                }
+                Some(config) = self.config_recv.recv() => {
+                    self.state.config = config;
+                }
+            }
             terminal.draw(|frame| self.render(frame))?;
-            self.handle_events().await;
         }
+
         ratatui::restore();
         execute!(stdout(), DisableMouseCapture)
     }
 
-    async fn handle_events(&mut self) {
-        tokio::select! {
-            Some(Ok(event)) = self.term_recv.next() => {
-                self.handle_term_event(event);
-            }
-            Some(event) = self.fs_recv.recv() => {
-                self.state.fs.handle_event(event);
-            }
-            Some(config) = self.config_recv.recv() => {
-                self.state.config = config;
-            }
-        }
-    }
-
-    fn handle_term_event(&mut self, event: Event) {
-        self.editor.handle(&event, &mut self.state);
+    fn handle_term_event(&mut self, event: Event) -> bool {
+        self.editor.handle(&event, &mut self.state)
     }
 
     fn render(&mut self, frame: &mut Frame) {
@@ -85,5 +89,8 @@ impl App {
         let buffer = frame.buffer_mut();
 
         self.editor.render(area, buffer, &self.state);
+
+        self.state.cursor = self.editor.cursor(&self.state);
+        frame.set_cursor_position(self.state.cursor);
     }
 }

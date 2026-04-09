@@ -188,6 +188,7 @@ impl TedWidget for Panes {
         if self.splits[self.root].children.is_empty() {
             return self.default.handle(event, state);
         }
+        let mut handled = false;
 
         match event {
             Event::Mouse(mouse) => {
@@ -199,6 +200,7 @@ impl TedWidget for Panes {
                                 ClickResult::Pane(pane) => {
                                     self.focused = Some(pane);
                                     self.drag = None;
+                                    handled = true;
                                 }
                                 ClickResult::Border(split, border) => {
                                     self.drag = Some((split, border));
@@ -236,7 +238,14 @@ impl TedWidget for Panes {
         // TODO: ctrl + key focus movement between panes
         // (tree traversal)
 
-        false
+        handled
+    }
+
+    fn cursor(&self, state: &State) -> Position {
+        match self.focused {
+            Some(focused) => self.panes[focused].0.cursor(state),
+            None => self.default.cursor(state),
+        }
     }
 }
 

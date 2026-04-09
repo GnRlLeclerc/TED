@@ -58,13 +58,19 @@ impl TedWidget for Filetree {
 
     fn handle(&mut self, event: &Event, state: &mut State) -> bool {
         match event {
-            Event::Key(key) => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => state.fs.up(),
-                KeyCode::Down | KeyCode::Char('j') => state.fs.down(),
-                KeyCode::Left | KeyCode::Char('h') => self.toggle(&mut state.fs),
-                KeyCode::Right | KeyCode::Char('l') => self.close(&mut state.fs),
-                _ => return false,
-            },
+            Event::Key(key) => {
+                if !key.modifiers.is_empty() {
+                    return false;
+                }
+
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => state.fs.up(),
+                    KeyCode::Down | KeyCode::Char('j') => state.fs.down(),
+                    KeyCode::Left | KeyCode::Char('h') => self.toggle(&mut state.fs),
+                    KeyCode::Right | KeyCode::Char('l') => self.close(&mut state.fs),
+                    _ => return false,
+                }
+            }
             Event::Mouse(mouse) => {
                 match mouse.kind {
                     MouseEventKind::Down(_) => {

@@ -366,28 +366,29 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                 KeyCode::Char('h') => match self.focused {
                     Some(Side::Right) => self.focus_main(state),
                     None => self.focus_drawer(Side::Left, state),
-                    _ => {}
+                    _ => return false,
                 },
                 // Focus right
                 KeyCode::Char('l') => match self.focused {
                     Some(Side::Left) => self.focus_main(state),
                     None => self.focus_drawer(Side::Right, state),
-                    _ => {}
+                    _ => return false,
                 },
                 // Focus up
                 KeyCode::Char('k') => match self.focused {
                     Some(Side::Bottom) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Top, state),
-                    _ => {}
+                    _ => return false,
                 },
                 // Focus down
                 KeyCode::Char('j') => match self.focused {
                     Some(Side::Top) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Bottom, state),
-                    _ => {}
+                    _ => return false,
                 },
-                _ => {}
+                _ => return false,
             }
+            return true;
         }
 
         false

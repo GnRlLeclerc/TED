@@ -1,40 +1,12 @@
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
-use enum_map::{Enum, EnumMap, enum_map};
+use enum_map::{EnumMap, enum_map};
 use ratatui::{layout::Offset, prelude::*};
 
 use crate::{
     state::State,
+    utils::Side,
     widgets::{Border, TedWidget},
 };
-
-#[derive(Enum, Copy, Clone)]
-pub enum Side {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-impl Side {
-    pub fn opposite(&self) -> Self {
-        match self {
-            Side::Top => Side::Bottom,
-            Side::Bottom => Side::Top,
-            Side::Left => Side::Right,
-            Side::Right => Side::Left,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn vertical(&self) -> bool {
-        matches!(self, Side::Top | Side::Bottom)
-    }
-
-    #[allow(dead_code)]
-    pub fn horizontal(&self) -> bool {
-        matches!(self, Side::Left | Side::Right)
-    }
-}
 
 /// Top, bottom, left and right drawers, around a central layout widget.
 ///
@@ -358,7 +330,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         // ***************************************************************** //
 
         if let Event::Key(key) = event {
-            if !key.modifiers.contains(KeyModifiers::CONTROL) {
+            if key.modifiers != KeyModifiers::CONTROL {
                 return false;
             }
             match key.code {
@@ -402,6 +374,10 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         } else {
             self.main.cursor(state)
         }
+    }
+
+    fn area(&self) -> Rect {
+        self.area
     }
 }
 

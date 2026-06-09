@@ -1,5 +1,35 @@
+use enum_map::Enum;
 use ratatui::prelude::*;
 use ted_config::Config;
+
+#[derive(Enum, Copy, Clone)]
+pub enum Side {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl Side {
+    pub fn opposite(&self) -> Self {
+        match self {
+            Side::Top => Side::Bottom,
+            Side::Bottom => Side::Top,
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn vertical(&self) -> bool {
+        matches!(self, Side::Top | Side::Bottom)
+    }
+
+    #[allow(dead_code)]
+    pub fn horizontal(&self) -> bool {
+        matches!(self, Side::Left | Side::Right)
+    }
+}
 
 /// Update the scroll position to ensure the cursor is visible
 /// with the given scroll margin.

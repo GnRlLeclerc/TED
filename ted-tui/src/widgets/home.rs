@@ -5,12 +5,14 @@ use crate::{state::State, widgets::TedWidget};
 
 pub struct Home {
     title: String,
+    area: Rect,
 }
 
 impl Home {
     pub fn new() -> Self {
         Self {
             title: "TED".to_string(),
+            area: Rect::default(),
         }
     }
 }
@@ -24,6 +26,7 @@ impl TedWidget for Home {
         ])
         .areas(area);
         Line::from(self.title.as_str()).centered().render(line, buf);
+        self.area = area;
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> bool {
@@ -36,5 +39,9 @@ impl TedWidget for Home {
         }
 
         true
+    }
+
+    fn area(&self) -> Rect {
+        self.area
     }
 }

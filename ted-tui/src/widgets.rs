@@ -31,6 +31,9 @@ pub trait TedWidget {
     /// On widget focus
     fn focus(&mut self, _: &mut State) {}
 
+    /// Returns the area where the widget was rendered last time
+    fn area(&self) -> Rect;
+
     fn boxed(self) -> Box<dyn TedWidget>
     where
         Self: Sized + 'static,

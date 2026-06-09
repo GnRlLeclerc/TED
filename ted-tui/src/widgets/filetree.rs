@@ -107,6 +107,10 @@ impl TedWidget for Filetree {
         let index = self.area.y + (state.fs.selected_index().saturating_sub(self.scroll) as u16);
         Position::new(self.area.x, index)
     }
+
+    fn area(&self) -> Rect {
+        self.area
+    }
 }
 
 impl Filetree {

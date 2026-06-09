@@ -1,7 +1,8 @@
 use std::io::stdout;
 
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, MouseEventKind},
+    cursor::SetCursorStyle,
+    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
     execute,
 };
 use futures::{StreamExt, stream::Fuse};
@@ -11,8 +12,9 @@ use ted_fs::{FSEvent, Filesystem};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    layouts::{Drawers, Panes, Side},
+    layouts::{Drawers, Panes},
     state::State,
+    utils::Side,
     widgets::{ClonableWidget, Filetree, Home, TedWidget},
 };
 
@@ -81,6 +83,10 @@ impl App {
     }
 
     fn handle_term_event(&mut self, event: Event) -> bool {
+        if matches!(event, Event::Resize(_, _)) {
+            return true;
+        }
+
         self.editor.handle(&event, &mut self.state)
     }
 

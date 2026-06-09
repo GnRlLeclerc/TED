@@ -2,10 +2,10 @@ use std::iter::once;
 
 use crate::{
     state::State,
-    utils::drag_to_cursor,
+    utils::{Side, drag_to_cursor},
     widgets::{Border, ClonableWidget, TedWidget},
 };
-use crossterm::event::{Event, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::prelude::*;
 use slotmap::{SlotMap, new_key_type};
 
@@ -29,7 +29,7 @@ pub struct Panes {
     drag: Option<(SplitKey, usize)>,
     splits: SlotMap<SplitKey, Split>,
     panes: SlotMap<PaneKey, (Box<dyn ClonableWidget>, SplitKey)>,
-    // DEBUG: for pane creation
+    // DEBUG: pub for pane creation
     pub focused: Option<PaneKey>,
 }
 
@@ -188,6 +188,8 @@ impl TedWidget for Panes {
         if self.splits[self.root].children.is_empty() {
             return self.default.handle(event, state);
         }
+        // Use a flag to allow handling the event multiple times in the specific case
+        // where a pane is clicked and its content is then also allowed to handle the click event.
         let mut handled = false;
 
         match event {
@@ -235,8 +237,22 @@ impl TedWidget for Panes {
             }
         }
 
-        // TODO: ctrl + key focus movement between panes
-        // (tree traversal)
+        // Move inbetween panes
+        if let Event::Key(key_event) = event
+            && key_event.modifiers == KeyModifiers::CONTROL
+            && let Some(key) = self.focused
+        {
+            if let Some(target) = match key_event.code {
+                KeyCode::Char('h') => self.focus_neighbor(key, Side::Left, state.cursor),
+                KeyCode::Char('j') => self.focus_neighbor(key, Side::Bottom, state.cursor),
+                KeyCode::Char('k') => self.focus_neighbor(key, Side::Top, state.cursor),
+                KeyCode::Char('l') => self.focus_neighbor(key, Side::Right, state.cursor),
+                _ => None,
+            } {
+                self.focus(target, state);
+                return true;
+            }
+        }
 
         handled
     }
@@ -246,6 +262,10 @@ impl TedWidget for Panes {
             Some(focused) => self.panes[focused].0.cursor(state),
             None => self.default.cursor(state),
         }
+    }
+
+    fn area(&self) -> Rect {
+        self.splits[self.root].area
     }
 }
 
@@ -379,6 +399,77 @@ impl Panes {
         }
 
         None
+    }
+
+    /// Recurse focus through a click.
+    /// Done in order to focus a neighboring top/bottom/left/right pane by simulating a click.
+    ///
+    /// Similar to recurse_click, but does not stop at borders.
+    /// When a border is encountered, the pane before the border will be selected.
+    fn recurse_focus(&self, pos: Position, key: SplitKey) -> Option<PaneKey> {
+        let split = &self.splits[key];
+
+        // Make the click relative to the split
+        let rel = match split.direction {
+            Direction::Horizontal => pos.x.saturating_sub(split.area.x),
+            Direction::Vertical => pos.y.saturating_sub(split.area.y),
+        };
+
+        let mut offset = 0;
+        for i in 0..split.children.len() {
+            offset += split.sizes[i] + 1; // pane + next border
+
+            // Check for pane collision
+            if rel < offset {
+                match split.children[i] {
+                    Child::Pane(pane) => {
+                        return Some(pane);
+                    }
+                    Child::Split(child_key) => {
+                        if self.splits[child_key].area.contains(pos) {
+                            return self.recurse_focus(pos, child_key);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Recurse through panes to focus the neighbor pane on the given side of the given pane.
+    /// If there are multiple neighboring panes on the same side,
+    /// the one which aligned with the cursor position is focused.
+    fn focus_neighbor(&self, key: PaneKey, side: Side, cursor: Position) -> Option<PaneKey> {
+        // 1. Compute click position
+        let mut click = cursor;
+        let (pane, _) = &self.panes[key];
+        let area = pane.area();
+
+        match side {
+            // Neighbor of index i+1: need to click past the shared border to focus them.
+            Side::Bottom => click.y = area.bottom() + 1,
+            Side::Right => click.x = area.right() + 1,
+            // Neighbor of index i-1: clicking on the shared border will focus them.
+            Side::Top => {
+                if area.top() == 0 {
+                    return None;
+                }
+                click.y = area.top() - 1;
+            }
+            Side::Left => {
+                if area.left() == 0 {
+                    return None;
+                }
+                click.x = area.left() - 1
+            }
+        }
+
+        if !self.area().contains(click) {
+            return None;
+        }
+
+        self.recurse_focus(click, self.root)
     }
 
     fn focus(&mut self, key: PaneKey, state: &mut State) {

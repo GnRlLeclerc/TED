@@ -13,6 +13,9 @@ use crate::{
 /// In order to make the central layout accessible in a non-type erased way,
 /// it is generic instead of a Box dyn.
 ///
+/// Also implements side and floating overlays that are mutually exclusive
+/// and steal focus while they are active.
+///
 /// ┌────────────────────────────────┐
 /// │              Top               │
 /// ├───────┬────────────────┬───────┤
@@ -28,11 +31,13 @@ pub struct Drawers<T: TedWidget> {
     /// If none, the main widget is focused
     focused: Option<Side>,
     drag: Option<Side>,
-    pub main: T,
+    main: T,
     /// (widget, open) tuples
     drawers: EnumMap<Side, Option<(Box<dyn TedWidget>, bool, u16)>>,
     /// An optional overlay
     overlay: Option<(Side, Box<dyn TedWidget>, u16)>,
+    /// An optional floating widget
+    floating: Option<Box<dyn TedWidget>>,
 }
 
 // ************************************************************************* //
@@ -55,6 +60,7 @@ impl<T: TedWidget> Drawers<T> {
             main,
             drawers,
             overlay: None,
+            floating: None,
         }
     }
 
@@ -84,7 +90,14 @@ impl<T: TedWidget> Drawers<T> {
 
     /// Open an overlay on the given side.
     pub fn overlay(&mut self, side: Side, widget: Box<dyn TedWidget>, size: u16) {
+        self.floating = None;
         self.overlay = Some((side, widget, size));
+    }
+
+    /// Open a floating widget.
+    pub fn floating(&mut self, widget: Box<dyn TedWidget>) {
+        self.overlay = None;
+        self.floating = Some(widget);
     }
 }
 
@@ -209,9 +222,29 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
             let rects = Layout::new(direction, constraints).split(area);
             overlay.render(rects[index], buf, state);
         }
+
+        // ***************************************************************** //
+        //                              FLOATING                             //
+        // ***************************************************************** //
+
+        if let Some(floating) = &mut self.floating {
+            floating.render(area, buf, state);
+        }
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> bool {
+        // ***************************************************************** //
+        //                              FLOATING                             //
+        // ***************************************************************** //
+
+        if let Some(floating) = &mut self.floating {
+            if floating.handle(event, state) {
+                return true;
+            } else {
+                self.floating = None;
+            }
+        }
+
         // ***************************************************************** //
         //                               OVERLAY                             //
         // ***************************************************************** //

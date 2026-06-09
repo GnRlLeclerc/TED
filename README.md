@@ -1,3 +1,3 @@
-# Tui Editor V2
+# TED
 
-Temporary other project while iterating on the main organization of stuff
+Toy TUI text editor, like neovim and helix, to learn what's underneath.

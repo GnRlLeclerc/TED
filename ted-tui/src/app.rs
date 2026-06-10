@@ -15,7 +15,7 @@ use crate::{
     layouts::{Drawers, Panes},
     state::State,
     utils::Side,
-    widgets::{ClonableWidget, Filetree, Flow, Home, TedWidget},
+    widgets::{ClonableWidget, Filetree, Finder, Flow, Home, TedWidget},
 };
 
 pub struct App {
@@ -85,6 +85,13 @@ impl App {
     fn handle_term_event(&mut self, event: Event) -> Flow {
         if matches!(event, Event::Resize(_, _)) {
             return Flow::Handled;
+        }
+
+        if let Event::Key(key) = event {
+            if key.code == KeyCode::Char('f') && key.modifiers.is_empty() {
+                self.editor.floating(Finder::new().boxed());
+                return Flow::Handled;
+            }
         }
 
         self.editor.handle(&event, &mut self.state)

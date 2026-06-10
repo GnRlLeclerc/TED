@@ -1,5 +1,6 @@
 use crossterm::event::Event;
 use ratatui::{
+    layout::Offset,
     prelude::*,
     widgets::{Block, BorderType, Clear},
 };
@@ -12,12 +13,14 @@ use crate::{
 /// Finder widget
 pub struct Finder {
     area: Rect,
+    cursor: Position,
 }
 
 impl Finder {
     pub fn new() -> Self {
         Self {
             area: Rect::default(),
+            cursor: Position::default(),
         }
     }
 
@@ -48,6 +51,8 @@ impl TedWidget for Finder {
         ])
         .areas(main);
 
+        self.cursor = search.as_position() + Offset::new(2, 1);
+
         Clear.render(preview, buf);
         Clear.render(results, buf);
         Clear.render(search, buf);
@@ -69,5 +74,9 @@ impl TedWidget for Finder {
 
     fn area(&self) -> Rect {
         self.area
+    }
+
+    fn cursor(&self, _: &State) -> Position {
+        self.cursor
     }
 }

@@ -410,7 +410,11 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
     }
 
     fn cursor(&self, state: &State) -> Position {
-        if let Some(focused) = &self.focused
+        if let Some(floating) = &self.floating {
+            floating.cursor(state)
+        } else if let Some((_, overlay, _)) = &self.overlay {
+            overlay.cursor(state)
+        } else if let Some(focused) = &self.focused
             && let Some((drawer, _, _)) = &self.drawers[*focused]
         {
             drawer.cursor(state)

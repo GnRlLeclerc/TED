@@ -194,9 +194,6 @@ impl TedWidget for Panes {
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
-        if self.splits[self.root].children.is_empty() {
-            return self.default.handle(event, state);
-        }
         // Use a flag to allow handling the event multiple times in the specific case
         // where a pane is clicked and its content is then also allowed to handle the click event.
         let mut handled = Flow::NotHandled;
@@ -237,6 +234,10 @@ impl TedWidget for Panes {
                 }
             }
             _ => {}
+        }
+
+        if self.splits[self.root].children.is_empty() {
+            return self.default.handle(event, state);
         }
 
         // Propagate to the focused pane

@@ -1,6 +1,10 @@
 use std::time::Instant;
 
-use crate::{state::State, utils::scroll_to_cursor, widgets::TedWidget};
+use crate::{
+    state::State,
+    utils::scroll_to_cursor,
+    widgets::{Flow, TedWidget},
+};
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::prelude::*;
 use ted_config::Config;
@@ -56,11 +60,11 @@ impl TedWidget for Filetree {
         self.area = area;
     }
 
-    fn handle(&mut self, event: &Event, state: &mut State) -> bool {
+    fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
         match event {
             Event::Key(key) => {
                 if !key.modifiers.is_empty() {
-                    return false;
+                    return Flow::NotHandled;
                 }
 
                 match key.code {
@@ -68,7 +72,7 @@ impl TedWidget for Filetree {
                     KeyCode::Down | KeyCode::Char('j') => state.fs.down(),
                     KeyCode::Left | KeyCode::Char('h') => self.toggle(&mut state.fs),
                     KeyCode::Right | KeyCode::Char('l') => self.close(&mut state.fs),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 }
             }
             Event::Mouse(mouse) => {
@@ -94,13 +98,13 @@ impl TedWidget for Filetree {
                     }
                     MouseEventKind::ScrollUp => self.scroll_up(&mut state.fs, &state.config),
                     MouseEventKind::ScrollDown => self.scroll_down(&mut state.fs, &state.config),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 }
             }
-            _ => return false,
+            _ => return Flow::NotHandled,
         }
 
-        true
+        Flow::Handled
     }
 
     fn cursor(&self, state: &State) -> Position {

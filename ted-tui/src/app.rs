@@ -15,7 +15,7 @@ use crate::{
     layouts::{Drawers, Panes},
     state::State,
     utils::Side,
-    widgets::{ClonableWidget, Filetree, Home, TedWidget},
+    widgets::{ClonableWidget, Filetree, Flow, Home, TedWidget},
 };
 
 pub struct App {
@@ -64,7 +64,7 @@ impl App {
         while !self.state.exit {
             tokio::select! {
                 Some(Ok(event)) = self.term_recv.next() => {
-                    if !self.handle_term_event(event) {
+                    if self.handle_term_event(event).not_handled() {
                         continue;
                     }
                 }
@@ -82,9 +82,9 @@ impl App {
         execute!(stdout(), DisableMouseCapture)
     }
 
-    fn handle_term_event(&mut self, event: Event) -> bool {
+    fn handle_term_event(&mut self, event: Event) -> Flow {
         if matches!(event, Event::Resize(_, _)) {
-            return true;
+            return Flow::Handled;
         }
 
         self.editor.handle(&event, &mut self.state)

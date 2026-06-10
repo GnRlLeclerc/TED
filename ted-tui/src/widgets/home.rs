@@ -1,7 +1,10 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 
-use crate::{state::State, widgets::TedWidget};
+use crate::{
+    state::State,
+    widgets::{Flow, TedWidget},
+};
 
 pub struct Home {
     title: String,
@@ -29,16 +32,16 @@ impl TedWidget for Home {
         self.area = area;
     }
 
-    fn handle(&mut self, event: &Event, state: &mut State) -> bool {
+    fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
         match event {
             Event::Key(key) => match key.code {
                 KeyCode::Char('q') => state.exit = true,
-                _ => return false,
+                _ => return Flow::NotHandled,
             },
-            _ => return false,
+            _ => return Flow::NotHandled,
         }
 
-        true
+        Flow::Handled
     }
 
     fn area(&self) -> Rect {

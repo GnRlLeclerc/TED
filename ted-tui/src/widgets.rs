@@ -3,13 +3,34 @@ use ratatui::prelude::*;
 
 mod border;
 mod filetree;
+mod finder;
 mod home;
 
 pub use border::Border;
 pub use filetree::Filetree;
+pub use finder::Finder;
 pub use home::Home;
 
 use crate::state::State;
+
+/// Event handling result.
+pub enum Flow {
+    /// Event handled, stop propagating
+    Handled,
+    /// Event not handled, propagate to parent
+    NotHandled,
+    /// Event handled and widget should be closed
+    Close,
+}
+
+impl Flow {
+    pub fn handled(&self) -> bool {
+        matches!(self, Flow::Handled | Flow::Close)
+    }
+    pub fn not_handled(&self) -> bool {
+        matches!(self, Flow::NotHandled)
+    }
+}
 
 /// A long-lived widget that modifies a state and renders based on it.
 /// The widget itself only stores UI-related states (such as Rects, scroll offsets, etc).
@@ -20,7 +41,7 @@ pub trait TedWidget {
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &State);
 
     /// Handle a crossterm event and update the state accordingly.
-    fn handle(&mut self, event: &Event, state: &mut State) -> bool;
+    fn handle(&mut self, event: &Event, state: &mut State) -> Flow;
 
     /// Returns an absolute cursor position to render.
     /// Called recursively on focused children.

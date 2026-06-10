@@ -5,7 +5,7 @@ use ratatui::{layout::Offset, prelude::*};
 use crate::{
     state::State,
     utils::Side,
-    widgets::{Border, TedWidget},
+    widgets::{Border, Flow, TedWidget},
 };
 
 /// Top, bottom, left and right drawers, around a central layout widget.
@@ -232,16 +232,19 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         }
     }
 
-    fn handle(&mut self, event: &Event, state: &mut State) -> bool {
+    fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
         // ***************************************************************** //
         //                              FLOATING                             //
         // ***************************************************************** //
 
         if let Some(floating) = &mut self.floating {
-            if floating.handle(event, state) {
-                return true;
-            } else {
-                self.floating = None;
+            match floating.handle(event, state) {
+                Flow::Handled => return Flow::Handled,
+                Flow::Close => {
+                    self.floating = None;
+                    return Flow::Handled;
+                }
+                Flow::NotHandled => {}
             }
         }
 
@@ -250,10 +253,13 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         // ***************************************************************** //
 
         if let Some((_, overlay, _)) = &mut self.overlay {
-            if overlay.handle(event, state) {
-                return true;
-            } else {
-                self.overlay = None;
+            match overlay.handle(event, state) {
+                Flow::Handled => return Flow::Handled,
+                Flow::Close => {
+                    self.overlay = None;
+                    return Flow::Handled;
+                }
+                Flow::NotHandled => {}
             }
         }
 
@@ -271,7 +277,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 if border {
                                     self.drag = Some(side);
                                     // Started dragging, don't propagate to the focused pane
-                                    return true;
+                                    return Flow::Handled;
                                 } else {
                                     self.focused = Some(side);
                                 }
@@ -318,7 +324,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 self.drag = None;
                             }
 
-                            return true;
+                            return Flow::Handled;
                         }
                     }
                     MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -327,7 +333,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 if let Some((drawer, _, _)) = &mut self.drawers[side] {
                                     drawer.handle(event, state)
                                 } else {
-                                    false
+                                    Flow::NotHandled
                                 }
                             }
                             None => self.main.handle(event, state),
@@ -345,16 +351,20 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
 
         if let Some(focused) = &self.focused {
             match &mut self.drawers[*focused] {
-                Some((drawer, _, _)) => {
-                    if drawer.handle(event, state) {
-                        return true;
+                Some((drawer, open, _)) => match drawer.handle(event, state) {
+                    Flow::Handled => return Flow::Handled,
+                    Flow::Close => {
+                        *open = false;
+                        self.focused = None;
+                        return Flow::Handled;
                     }
-                }
+                    Flow::NotHandled => {}
+                },
                 None => self.focused = None,
             }
         } else {
-            if self.main.handle(event, state) {
-                return true;
+            if self.main.handle(event, state).handled() {
+                return Flow::Handled;
             }
         }
 
@@ -364,39 +374,39 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
 
         if let Event::Key(key) = event {
             if key.modifiers != KeyModifiers::CONTROL {
-                return false;
+                return Flow::NotHandled;
             }
             match key.code {
                 // Focus left
                 KeyCode::Char('h') => match self.focused {
                     Some(Side::Right) => self.focus_main(state),
                     None => self.focus_drawer(Side::Left, state),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 },
                 // Focus right
                 KeyCode::Char('l') => match self.focused {
                     Some(Side::Left) => self.focus_main(state),
                     None => self.focus_drawer(Side::Right, state),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 },
                 // Focus up
                 KeyCode::Char('k') => match self.focused {
                     Some(Side::Bottom) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Top, state),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 },
                 // Focus down
                 KeyCode::Char('j') => match self.focused {
                     Some(Side::Top) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Bottom, state),
-                    _ => return false,
+                    _ => return Flow::NotHandled,
                 },
-                _ => return false,
+                _ => return Flow::NotHandled,
             }
-            return true;
+            return Flow::Handled;
         }
 
-        false
+        Flow::NotHandled
     }
 
     fn cursor(&self, state: &State) -> Position {

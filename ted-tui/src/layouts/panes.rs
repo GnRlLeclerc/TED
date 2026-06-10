@@ -3,7 +3,7 @@ use std::iter::once;
 use crate::{
     state::State,
     utils::{Side, drag_to_cursor},
-    widgets::{Border, ClonableWidget, TedWidget},
+    widgets::{Border, ClonableWidget, Flow, TedWidget},
 };
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::prelude::*;
@@ -184,13 +184,13 @@ impl TedWidget for Panes {
         }
     }
 
-    fn handle(&mut self, event: &Event, state: &mut State) -> bool {
+    fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
         if self.splits[self.root].children.is_empty() {
             return self.default.handle(event, state);
         }
         // Use a flag to allow handling the event multiple times in the specific case
         // where a pane is clicked and its content is then also allowed to handle the click event.
-        let mut handled = false;
+        let mut handled = Flow::NotHandled;
 
         match event {
             Event::Mouse(mouse) => {
@@ -202,12 +202,12 @@ impl TedWidget for Panes {
                                 ClickResult::Pane(pane) => {
                                     self.focused = Some(pane);
                                     self.drag = None;
-                                    handled = true;
+                                    handled = Flow::Handled;
                                 }
                                 ClickResult::Border(split, border) => {
                                     self.drag = Some((split, border));
                                     // Started dragging, stop propagation
-                                    return true;
+                                    return Flow::Handled;
                                 }
                             }
                         }
@@ -218,7 +218,7 @@ impl TedWidget for Panes {
                     MouseEventKind::Drag(_) => {
                         if let Some((split, border)) = self.drag {
                             self.splits[split].drag_to_cursor(border, cursor);
-                            return true;
+                            return Flow::Handled;
                         }
                     }
                     MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -232,8 +232,13 @@ impl TedWidget for Panes {
 
         // Propagate to the focused pane
         if let Some(focused) = self.focused {
-            if self.panes[focused].0.handle(event, state) {
-                return true;
+            match self.panes[focused].0.handle(event, state) {
+                Flow::Handled => return Flow::Handled,
+                Flow::Close => {
+                    self.close(focused, state);
+                    return Flow::Handled;
+                }
+                Flow::NotHandled => {}
             }
         }
 
@@ -250,7 +255,7 @@ impl TedWidget for Panes {
                 _ => None,
             } {
                 self.focus(target, state);
-                return true;
+                return Flow::Handled;
             }
         }
 
@@ -318,11 +323,11 @@ impl Panes {
         key: SplitKey,
         event: &Event,
         state: &mut State,
-    ) -> bool {
+    ) -> Flow {
         let split = &self.splits[key];
 
         if !split.area.contains(pos) {
-            return false;
+            return Flow::NotHandled;
         }
 
         // Make the click relative to the split
@@ -340,22 +345,22 @@ impl Panes {
                 match split.children[i] {
                     Child::Pane(pane) => {
                         self.panes[pane].0.handle(event, state);
-                        return true;
+                        return Flow::Handled;
                     }
                     Child::Split(child_key) => {
-                        if self.recurse_scroll(pos, child_key, event, state) {
-                            return true;
+                        if self.recurse_scroll(pos, child_key, event, state).handled() {
+                            return Flow::Handled;
                         }
                     }
                 }
 
-                return true;
+                return Flow::NotHandled;
             }
 
             offset += 1; // border width
         }
 
-        false
+        Flow::NotHandled
     }
 
     /// Recurse a click through the splits in order to:

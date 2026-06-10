@@ -46,7 +46,7 @@ pub trait TedWidget {
     /// Returns an absolute cursor position to render.
     /// Called recursively on focused children.
     fn cursor(&self, _: &State) -> Position {
-        Position::default()
+        self.area().as_position()
     }
 
     /// On widget focus

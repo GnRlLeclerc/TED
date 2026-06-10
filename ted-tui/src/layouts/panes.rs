@@ -93,7 +93,10 @@ impl Panes {
         } else {
             // Replace the pane with a split that contains it twice
             let split = Split::new(direction, parent, [key, clone_key]);
-            self.splits[parent].children[pane_index] = Child::Split(self.splits.insert(split));
+            let parent_key = self.splits.insert(split);
+            self.splits[parent].children[pane_index] = Child::Split(parent_key);
+            self.panes[key].1 = parent_key;
+            self.panes[clone_key].1 = parent_key;
         }
 
         self.focus(clone_key, state);
@@ -124,6 +127,12 @@ impl Panes {
                 .position(|child| matches!(child, Child::Split(k) if *k == parent))
                 .unwrap();
             self.splits[split_parent].children[index] = remaining;
+
+            // Update parent key in the remaining child
+            match remaining {
+                Child::Pane(pane) => self.panes[pane].1 = split_parent,
+                Child::Split(child) => self.splits[child].parent = Some(split_parent),
+            }
 
             if change_focus {
                 self.focus_nearest_sibling(split_parent, state, index);
@@ -298,6 +307,13 @@ impl Panes {
 
     /// Focus the nearest sibling pane of the pane at the given index in the split.
     fn focus_nearest_sibling(&mut self, split: SplitKey, state: &mut State, index: usize) {
+        // Only ever happens when closing the last pane in the root split
+        // (the default widget is now displayed)
+        if self.splits[split].children.len() == 0 {
+            self.focused = None;
+            return;
+        }
+
         let index = index.min(self.splits[split].children.len() - 1);
         match self.splits[split].children[index] {
             Child::Pane(pane) => self.focused = Some(pane),

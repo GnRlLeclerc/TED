@@ -1,8 +1,8 @@
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::Offset,
     prelude::*,
-    widgets::{Block, BorderType, Clear},
+    widgets::{Block, BorderType, Clear, Padding, Paragraph},
 };
 
 use crate::{
@@ -14,6 +14,7 @@ use crate::{
 pub struct Finder {
     area: Rect,
     cursor: Position,
+    filter: String,
 }
 
 impl Finder {
@@ -21,6 +22,7 @@ impl Finder {
         Self {
             area: Rect::default(),
             cursor: Position::default(),
+            filter: "".to_string(),
         }
     }
 
@@ -51,7 +53,10 @@ impl TedWidget for Finder {
         ])
         .areas(main);
 
-        self.cursor = search.as_position() + Offset::new(2, 1);
+        let filter_len = search.width as usize - 4;
+        let offset = self.filter.chars().count().saturating_sub(filter_len);
+        self.cursor = search.as_position()
+            + Offset::new(2 + self.filter.chars().count().min(filter_len) as i32, 1);
 
         Clear.render(preview, buf);
         Clear.render(results, buf);
@@ -63,13 +68,34 @@ impl TedWidget for Finder {
         Self::block(Color::Blue)
             .title(" Results ")
             .render(results, buf);
-        Self::block(Color::Red)
-            .title(" Find Files ")
+        Paragraph::new(&self.filter[offset..])
+            .block(
+                Self::block(Color::Red)
+                    .title(" Find Files ")
+                    .padding(Padding::horizontal(1)),
+            )
             .render(search, buf);
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
-        Flow::close()
+        match event {
+            Event::Key(event) => match event.code {
+                KeyCode::Esc => return Flow::close(),
+                KeyCode::Char(char) => {
+                    self.filter.push(char);
+                    return Flow::handled();
+                }
+                KeyCode::Backspace => {
+                    self.filter.pop();
+                    return Flow::handled();
+                }
+                _ => {}
+            },
+
+            _ => {}
+        }
+
+        Flow::not_handled()
     }
 
     fn area(&self) -> Rect {

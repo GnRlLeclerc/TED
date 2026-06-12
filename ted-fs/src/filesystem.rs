@@ -291,7 +291,9 @@ impl Filesystem {
             }
 
             let file = File::new(path, None);
-            sender.send(FSEvent::OrphanLoaded(file)).await;
+            if let Err(err) = sender.send(FSEvent::OrphanLoaded(file)).await {
+                log::error!("Failed to send orphan loaded event: {}", err);
+            }
         });
     }
 }

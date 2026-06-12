@@ -3,7 +3,7 @@ use ratatui::prelude::*;
 
 use crate::{
     state::State,
-    widgets::{Flow, TedWidget},
+    widgets::{Flow, FlowExt, TedWidget},
 };
 
 pub struct Home {
@@ -32,16 +32,16 @@ impl TedWidget for Home {
         self.area = area;
     }
 
-    fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
+    fn handle(&mut self, event: &Event, _: &mut State) -> Flow {
         match event {
             Event::Key(key) => match key.code {
-                KeyCode::Char('q') => state.exit = true,
-                _ => return Flow::NotHandled,
+                KeyCode::Char('q') => return Flow::close(),
+                _ => {}
             },
-            _ => return Flow::NotHandled,
+            _ => {}
         }
 
-        Flow::Handled
+        Flow::not_handled()
     }
 
     fn area(&self) -> Rect {

@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use crossterm::event::Event;
 use ratatui::prelude::*;
 
@@ -13,22 +15,41 @@ pub use home::Home;
 
 use crate::state::State;
 
-/// Event handling result.
-pub enum Flow {
-    /// Event handled, stop propagating
+pub enum Handled {
+    /// Event handled, just stop propagating
     Handled,
-    /// Event not handled, propagate to parent
-    NotHandled,
     /// Event handled and widget should be closed
     Close,
 }
 
-impl Flow {
-    pub fn handled(&self) -> bool {
-        matches!(self, Flow::Handled | Flow::Close)
+/// Event handling result.
+/// Uses ControlFlow for easy propagation.
+pub type Flow = ControlFlow<Handled>;
+
+pub trait FlowExt {
+    fn handled() -> Flow {
+        Flow::Break(Handled::Handled)
     }
-    pub fn not_handled(&self) -> bool {
-        matches!(self, Flow::NotHandled)
+    fn close() -> Flow {
+        Flow::Break(Handled::Close)
+    }
+    fn not_handled() -> Flow {
+        Flow::Continue(())
+    }
+
+    /// Run a callback if the flow is close, handling the close event
+    /// and returning Flow::handled() instead.
+    fn on_close<F: FnOnce()>(self, callback: F) -> Flow;
+}
+
+impl FlowExt for Flow {
+    fn on_close<F: FnOnce()>(self, callback: F) -> Flow {
+        if matches!(self, Flow::Break(Handled::Close)) {
+            callback();
+            Flow::handled()
+        } else {
+            self
+        }
     }
 }
 

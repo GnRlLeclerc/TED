@@ -5,7 +5,7 @@ use ratatui::{layout::Offset, prelude::*};
 use crate::{
     state::State,
     utils::Side,
-    widgets::{Border, Flow, TedWidget},
+    widgets::{Border, Flow, FlowExt, TedWidget},
 };
 
 /// Top, bottom, left and right drawers, around a central layout widget.
@@ -238,14 +238,9 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         // ***************************************************************** //
 
         if let Some(floating) = &mut self.floating {
-            match floating.handle(event, state) {
-                Flow::Handled => return Flow::Handled,
-                Flow::Close => {
-                    self.floating = None;
-                    return Flow::Handled;
-                }
-                Flow::NotHandled => {}
-            }
+            floating
+                .handle(event, state)
+                .on_close(|| self.floating = None)?;
         }
 
         // ***************************************************************** //
@@ -253,14 +248,9 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
         // ***************************************************************** //
 
         if let Some((_, overlay, _)) = &mut self.overlay {
-            match overlay.handle(event, state) {
-                Flow::Handled => return Flow::Handled,
-                Flow::Close => {
-                    self.overlay = None;
-                    return Flow::Handled;
-                }
-                Flow::NotHandled => {}
-            }
+            overlay
+                .handle(event, state)
+                .on_close(|| self.overlay = None)?;
         }
 
         // ***************************************************************** //
@@ -277,7 +267,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 if border {
                                     self.drag = Some(side);
                                     // Started dragging, don't propagate to the focused pane
-                                    return Flow::Handled;
+                                    return Flow::handled();
                                 } else {
                                     self.focused = Some(side);
                                 }
@@ -324,7 +314,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 self.drag = None;
                             }
 
-                            return Flow::Handled;
+                            return Flow::handled();
                         }
                     }
                     MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -333,7 +323,7 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
                                 if let Some((drawer, _, _)) = &mut self.drawers[side] {
                                     drawer.handle(event, state)
                                 } else {
-                                    Flow::NotHandled
+                                    Flow::not_handled()
                                 }
                             }
                             None => self.main.handle(event, state),
@@ -351,21 +341,14 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
 
         if let Some(focused) = &self.focused {
             match &mut self.drawers[*focused] {
-                Some((drawer, open, _)) => match drawer.handle(event, state) {
-                    Flow::Handled => return Flow::Handled,
-                    Flow::Close => {
-                        *open = false;
-                        self.focused = None;
-                        return Flow::Handled;
-                    }
-                    Flow::NotHandled => {}
-                },
+                Some((drawer, open, _)) => drawer.handle(event, state).on_close(|| {
+                    *open = false;
+                    self.focused = None
+                })?,
                 None => self.focused = None,
             }
         } else {
-            if self.main.handle(event, state).handled() {
-                return Flow::Handled;
-            }
+            self.main.handle(event, state)?;
         }
 
         // ***************************************************************** //
@@ -374,39 +357,39 @@ impl<T: TedWidget> TedWidget for Drawers<T> {
 
         if let Event::Key(key) = event {
             if key.modifiers != KeyModifiers::CONTROL {
-                return Flow::NotHandled;
+                return Flow::not_handled();
             }
             match key.code {
                 // Focus left
                 KeyCode::Char('h') => match self.focused {
                     Some(Side::Right) => self.focus_main(state),
                     None => self.focus_drawer(Side::Left, state),
-                    _ => return Flow::NotHandled,
+                    _ => return Flow::not_handled(),
                 },
                 // Focus right
                 KeyCode::Char('l') => match self.focused {
                     Some(Side::Left) => self.focus_main(state),
                     None => self.focus_drawer(Side::Right, state),
-                    _ => return Flow::NotHandled,
+                    _ => return Flow::not_handled(),
                 },
                 // Focus up
                 KeyCode::Char('k') => match self.focused {
                     Some(Side::Bottom) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Top, state),
-                    _ => return Flow::NotHandled,
+                    _ => return Flow::not_handled(),
                 },
                 // Focus down
                 KeyCode::Char('j') => match self.focused {
                     Some(Side::Top) => self.focus_horizontal(state),
                     None => self.focus_drawer(Side::Bottom, state),
-                    _ => return Flow::NotHandled,
+                    _ => return Flow::not_handled(),
                 },
-                _ => return Flow::NotHandled,
+                _ => return Flow::not_handled(),
             }
-            return Flow::Handled;
+            return Flow::handled();
         }
 
-        Flow::NotHandled
+        Flow::not_handled()
     }
 
     fn cursor(&self, state: &State) -> Position {

@@ -15,7 +15,7 @@ use crate::{
     layouts::{Drawers, Panes},
     state::State,
     utils::Side,
-    widgets::{ClonableWidget, Filetree, Finder, Flow, Home, TedWidget},
+    widgets::{ClonableWidget, Filetree, Finder, Flow, FlowExt, Handled, Home, TedWidget},
 };
 
 pub struct App {
@@ -61,11 +61,13 @@ impl App {
         // Initial rendering
         terminal.draw(|frame| self.render(frame))?;
 
-        while !self.state.exit {
+        loop {
             tokio::select! {
                 Some(Ok(event)) = self.term_recv.next() => {
-                    if self.handle_term_event(event).not_handled() {
-                        continue;
+                    match self.handle_term_event(event) {
+                        Flow::Continue(_) => continue,
+                        Flow::Break(Handled::Close) => break,
+                        _ => {}
                     }
                 }
                 Some(event) = self.fs_recv.recv() => {
@@ -84,17 +86,19 @@ impl App {
 
     fn handle_term_event(&mut self, event: Event) -> Flow {
         if matches!(event, Event::Resize(_, _)) {
-            return Flow::Handled;
+            return Flow::handled();
         }
+
+        self.editor.handle(&event, &mut self.state)?;
 
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('f') && key.modifiers.is_empty() {
                 self.editor.floating(Finder::new().boxed());
-                return Flow::Handled;
+                return Flow::handled();
             }
         }
 
-        self.editor.handle(&event, &mut self.state)
+        Flow::not_handled()
     }
 
     fn render(&mut self, frame: &mut Frame) {

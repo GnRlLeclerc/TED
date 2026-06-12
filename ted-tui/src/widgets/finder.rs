@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::{
     state::State,
-    widgets::{Flow, TedWidget},
+    widgets::{Flow, FlowExt, TedWidget},
 };
 
 /// Finder widget
@@ -69,7 +69,7 @@ impl TedWidget for Finder {
     }
 
     fn handle(&mut self, event: &Event, state: &mut State) -> Flow {
-        Flow::Close
+        Flow::close()
     }
 
     fn area(&self) -> Rect {

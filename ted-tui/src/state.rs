@@ -4,7 +4,6 @@ use ted_fs::Filesystem;
 
 /// Global app state
 pub struct State {
-    pub exit: bool,
     pub fs: Filesystem,
     pub config: Config,
     /// Absolute cursor position, rendered each frame
@@ -14,7 +13,6 @@ pub struct State {
 impl State {
     pub fn new(fs: Filesystem, config: Config) -> Self {
         Self {
-            exit: false,
             fs,
             config,
             cursor: Position::default(),

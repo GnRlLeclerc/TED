@@ -225,13 +225,12 @@ impl TedWidget for Finder {
                     state.matcher.close();
                     return Flow::close();
                 }
+                KeyCode::Enter => {
+                    // TODO: run the select option
+                    state.matcher.close();
+                    return Flow::close();
+                }
                 KeyCode::Char(char) => {
-                    if event.modifiers.is_empty() {
-                        self.filter.push(char);
-                        state.matcher.search(&self.filter, true);
-                        self.update_filter();
-                        return Flow::handled();
-                    }
                     if event.modifiers == KeyModifiers::CONTROL {
                         match char {
                             'j' => return self.down(),
@@ -239,6 +238,12 @@ impl TedWidget for Finder {
                             _ => return Flow::not_handled(),
                         }
                     }
+
+                    // Default handling
+                    self.filter.push(char);
+                    state.matcher.search(&self.filter, true);
+                    self.update_filter();
+                    return Flow::handled();
                 }
                 KeyCode::Up => return self.up(),
                 KeyCode::Down => return self.down(),

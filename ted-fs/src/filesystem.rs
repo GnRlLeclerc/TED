@@ -3,10 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use ropey::Rope;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use slotmap::SlotMap;
 
+use crate::file::load_rope;
 use crate::{FSEvent, File, FileKey, Folder, FolderKey, Item};
 
 pub struct Filesystem {
@@ -29,6 +31,10 @@ pub struct Filesystem {
     folders: SlotMap<FolderKey, Folder>,
     /// Lookup map by path for easy fs event handling
     paths: HashMap<PathBuf, Item>,
+    /// Lookup map to avoid loading the same paths multiple times.
+    /// Used when lazy-loading orphan files previewed in the file picker,
+    /// when the same file may be queried once each frame when loading the items.
+    loading: HashSet<PathBuf>,
     unsaved: HashSet<FileKey>,
     sender: Sender<FSEvent>,
 }
@@ -50,6 +56,7 @@ impl Filesystem {
             files: SlotMap::with_key(),
             folders,
             paths: HashMap::new(),
+            loading: HashSet::new(),
             unsaved: HashSet::new(),
 
             sender: sender,
@@ -125,6 +132,29 @@ impl Filesystem {
         &self.view
     }
 
+    /// Ensure that a file is previewable from a path.
+    /// Basically, ensure that the file is loaded, and its buffer as well.
+    pub fn ensure_preview(&mut self, path: &Path) -> Option<FileKey> {
+        match self.paths.get(path) {
+            Some(Item::File(key)) => match &self.files[*key].buffer {
+                Some(_) => Some(*key),
+                None => {
+                    self.load_buffer(*key);
+                    None
+                }
+            },
+            Some(Item::Folder(_)) => None,
+            None => {
+                self.load_orphan(path.to_path_buf(), true);
+                None
+            }
+        }
+    }
+
+    pub fn preview(&self, key: FileKey) -> Option<&Rope> {
+        self.files[key].buffer.as_ref()
+    }
+
     // ************************************************* //
     //                      SELECTION                    //
     // ************************************************* //
@@ -183,7 +213,7 @@ impl Filesystem {
     pub fn peek_path(&mut self, path: &Path) {
         match self.paths.get(path) {
             Some(item) => self.peek(*item),
-            None => self.load_orphan(path.to_path_buf()),
+            None => self.load_orphan(path.to_path_buf(), false),
         }
     }
 
@@ -232,6 +262,7 @@ impl Filesystem {
                 folders,
             } => self.init_folder(key, files, folders),
             FSEvent::OrphanLoaded(file) => self.init_orphan(file),
+            FSEvent::BufferLoaded { key, buffer } => self.init_buffer(key, buffer),
         }
     }
 }
@@ -281,8 +312,13 @@ impl Filesystem {
         });
     }
 
-    /// Load an orphan file (peeked in the file picker) lazily.
-    fn load_orphan(&mut self, path: PathBuf) {
+    /// Load an orphan file (peeked in the file picker) in the background.
+    fn load_orphan(&mut self, path: PathBuf, buffer: bool) {
+        if self.loading.contains(&path) {
+            return;
+        }
+        self.loading.insert(path.clone());
+
         let sender = self.sender.clone();
         tokio::spawn(async move {
             if !path.is_file() {
@@ -290,9 +326,30 @@ impl Filesystem {
                 return;
             }
 
-            let file = File::new(path, None);
+            let mut file = File::new(path, None);
+            if buffer {
+                file.buffer = load_rope(&file.path).await;
+            }
             if let Err(err) = sender.send(FSEvent::OrphanLoaded(file)).await {
                 log::error!("Failed to send orphan loaded event: {}", err);
+            }
+        });
+    }
+
+    /// Load the buffer of a file in the background.
+    fn load_buffer(&mut self, key: FileKey) {
+        if self.loading.contains(&self.files[key].path) || self.files[key].buffer.is_some() {
+            return;
+        }
+        self.loading.insert(self.files[key].path.clone());
+
+        let sender = self.sender.clone();
+        let path = self.files[key].path.clone();
+        tokio::spawn(async move {
+            if let Some(buffer) = load_rope(&path).await {
+                if let Err(err) = sender.send(FSEvent::BufferLoaded { key, buffer }).await {
+                    log::error!("Failed to send buffer loaded event: {}", err);
+                }
             }
         });
     }
@@ -330,6 +387,13 @@ impl Filesystem {
         let key = self.files.insert(file);
         self.paths
             .insert(self.files[key].path.clone(), Item::File(key));
+        self.loading.remove(&self.files[key].path);
+    }
+
+    /// Initialize a file buffer that is being lazily loaded.
+    fn init_buffer(&mut self, key: FileKey, buffer: Rope) {
+        self.files[key].buffer = Some(buffer);
+        self.loading.remove(&self.files[key].path);
     }
 
     fn rebuild_view(&mut self) {

@@ -8,3 +8,5 @@ ignore.workspace = true
 log.workspace = true
 nucleo.workspace = true
 tokio.workspace = true
+ropey.workspace = true
+ted-fs.path = "../ted-fs"

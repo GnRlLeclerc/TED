@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use devicons::FileIcon;
 use hex_color::HexColor;
 use ropey::Rope;
+use tokio::fs;
 
 use crate::FolderKey;
 
@@ -68,4 +69,15 @@ impl Ord for File {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.name.cmp(&other.name)
     }
+}
+
+pub async fn load_rope(path: &Path) -> Option<Rope> {
+    let bytes = match fs::read(path).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            log::error!("Failed to read file {}: {}", path.display(), err);
+            return None;
+        }
+    };
+    Some(Rope::from_str(&String::from_utf8_lossy(&bytes)))
 }

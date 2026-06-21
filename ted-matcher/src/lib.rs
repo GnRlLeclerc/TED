@@ -7,6 +7,8 @@ use nucleo::{
     pattern::{CaseMatching, Normalization},
 };
 
+use ropey::Rope;
+use ted_fs::{FileKey, Filesystem};
 use tokio::{sync::watch::Receiver, time::Instant};
 
 pub struct Matcher {
@@ -18,6 +20,17 @@ pub struct Matcher {
     last_tick: Instant,
     /// Debouncing duration
     debounce: Duration,
+    /// Finder cursor
+    /// Stored here such that from the matcher tick event handling,
+    /// the filesystem file preview can be updated,
+    /// instead of it being hidden away in the finder widget.
+    selected: usize,
+    /// Total amount of items
+    total: usize,
+    /// Total amount of matched items
+    matched: usize,
+    /// Previewed file
+    previewed: Option<FileKey>,
 }
 
 impl Matcher {
@@ -38,6 +51,10 @@ impl Matcher {
                 ),
                 last_tick: Instant::now(),
                 debounce: Duration::from_millis(10),
+                selected: 0,
+                total: 0,
+                matched: 0,
+                previewed: None,
             },
             rx,
         )
@@ -74,14 +91,37 @@ impl Matcher {
             Normalization::Smart,
             append,
         );
-        self.tick(Instant::now());
+        self.nucleo.tick(0);
+        self.selected = 0;
     }
 
     pub fn close(&mut self) {
         self.nucleo.restart(true);
+        self.selected = 0;
+        self.previewed = None;
     }
 
-    pub fn tick(&mut self, instant: Instant) -> bool {
+    pub fn up(&mut self, fs: &mut Filesystem) {
+        self.selected = self
+            .selected
+            .saturating_add(1)
+            .min(self.matched.saturating_sub(1));
+        self.ensure_preview(fs);
+    }
+
+    pub fn down(&mut self, fs: &mut Filesystem) {
+        self.selected = self.selected.saturating_sub(1);
+        self.ensure_preview(fs);
+    }
+
+    pub fn ensure_preview(&mut self, fs: &mut Filesystem) {
+        let snapshot = self.nucleo.snapshot();
+        self.previewed = snapshot
+            .get_matched_item(self.selected as u32)
+            .and_then(|item| fs.ensure_preview(&item.data));
+    }
+
+    pub fn tick(&mut self, instant: Instant, fs: &mut Filesystem) -> bool {
         let status = self.nucleo.tick(0);
 
         // Nothing to update
@@ -92,16 +132,34 @@ impl Matcher {
         // Last tick
         if !status.running || instant.duration_since(self.last_tick) > self.debounce {
             self.last_tick = instant;
+            self.matched = self.nucleo.snapshot().matched_item_count() as usize;
+            self.total = self.nucleo.snapshot().item_count() as usize;
+            self.ensure_preview(fs);
             return true;
         }
 
         false
     }
 
+    pub fn selected(&self) -> usize {
+        self.selected
+    }
+
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
+    pub fn matched(&self) -> usize {
+        self.matched
+    }
+
+    pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<&'a Rope> {
+        self.previewed.and_then(|key| fs.preview(key))
+    }
+
     /// Get a slice of the matched items, along with the total and matched counts.
-    pub fn slice(&self, offset: u32, limit: u32) -> (Vec<ItemDisplay<'_>>, u32, u32) {
+    pub fn slice(&self, offset: u32, limit: u32) -> Vec<ItemDisplay<'_>> {
         let snapshot = self.nucleo.snapshot();
-        let total = snapshot.item_count();
         let matched = snapshot.matched_item_count();
 
         let range = offset..(offset + limit).min(matched);
@@ -110,7 +168,7 @@ impl Matcher {
             .map(ItemDisplay::from)
             .collect::<Vec<_>>();
 
-        (items, total, matched)
+        items
     }
 }
 

@@ -1,4 +1,6 @@
-use crate::{FolderKey, file::File, folder::Folder};
+use ropey::Rope;
+
+use crate::{FileKey, FolderKey, file::File, folder::Folder};
 
 /// Background task events used to sync the filesystem state.
 pub enum FSEvent {
@@ -8,4 +10,8 @@ pub enum FSEvent {
         folders: Vec<Folder>,
     },
     OrphanLoaded(File),
+    BufferLoaded {
+        key: FileKey,
+        buffer: Rope,
+    },
 }

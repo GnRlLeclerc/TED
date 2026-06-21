@@ -4,11 +4,13 @@ use crossterm::event::Event;
 use ratatui::prelude::*;
 
 mod border;
+mod file;
 mod filetree;
 mod finder;
 mod home;
 
 pub use border::Border;
+pub use file::FileBuffer;
 pub use filetree::Filetree;
 pub use finder::Finder;
 pub use home::Home;

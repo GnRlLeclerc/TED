@@ -78,14 +78,21 @@ impl App {
                     }
                 }
                 Some(event) = self.fs_recv.recv() => {
+                    let notify_matcher = matches!(
+                        event,
+                        FSEvent::BufferLoaded { .. } | FSEvent::OrphanLoaded { .. }
+                    );
                     self.state.fs.handle_event(event);
+                    if notify_matcher {
+                        self.state.matcher.ensure_preview(&mut self.state.fs);
+                    }
                 }
                 Some(config) = self.config_recv.recv() => {
                     self.state.config = config;
                 }
                 Ok(_) = self.matcher_recv.changed() => {
                     let instant = *self.matcher_recv.borrow();
-                    if !self.state.matcher.tick(instant) {
+                    if !self.state.matcher.tick(instant, &mut self.state.fs) {
                         continue;
                     }
                 }

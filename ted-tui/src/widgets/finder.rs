@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{
     state::State,
-    widgets::{Flow, FlowExt, TedWidget},
+    widgets::{FileBuffer, Flow, FlowExt, TedWidget},
 };
 
 /// Finder widget
@@ -21,12 +21,6 @@ pub struct Finder {
     filter_utf32: Vec<Utf32String>,
     /// Scroll offset
     offset: usize,
-    /// Currently selected items in the results
-    selected: usize,
-    /// Total amount of matched items (used for scrolling)
-    matched: usize,
-    /// Amount of displayed items (used for scrolling)
-    results: usize,
 }
 
 impl Finder {
@@ -38,9 +32,6 @@ impl Finder {
             filter: "".to_string(),
             filter_utf32: Vec::new(),
             offset: 0,
-            selected: 0,
-            matched: 0,
-            results: 0,
         }
     }
 
@@ -52,30 +43,6 @@ impl Finder {
             .border_style(Style::default().dark_gray())
     }
 
-    fn up(&mut self) -> Flow {
-        if self.selected + 1 >= self.matched {
-            return Flow::not_handled();
-        }
-        self.selected += 1;
-        if self.selected >= self.offset + self.results {
-            self.offset += 1;
-        }
-
-        Flow::handled()
-    }
-
-    fn down(&mut self) -> Flow {
-        if self.selected == 0 {
-            return Flow::not_handled();
-        }
-        self.selected -= 1;
-        if self.selected < self.offset {
-            self.offset = self.selected;
-        }
-
-        Flow::handled()
-    }
-
     fn update_filter(&mut self) {
         self.filter_utf32 = self
             .filter
@@ -84,7 +51,6 @@ impl Finder {
             .map(Utf32String::from)
             .collect();
         self.offset = 0;
-        self.selected = 0;
     }
 }
 
@@ -115,19 +81,33 @@ impl TedWidget for Finder {
         //                               PREVIEW                             //
         // ***************************************************************** //
 
-        Self::block(Color::Green)
-            .title(" Preview ")
-            .render(preview, buf);
+        if let Some(rope) = state.matcher.preview(&state.fs) {
+            FileBuffer::new(rope, 0)
+                .block(Self::block(Color::Green).title(" Preview "))
+                .render(preview, buf);
+        } else {
+            Self::block(Color::Green)
+                .title(" Preview ")
+                .render(preview, buf);
+        }
 
         // ***************************************************************** //
         //                               RESULTS                             //
         // ***************************************************************** //
 
-        let (items, total, matched) = state
+        let selected = state.matcher.selected();
+        let n_results = results.height.saturating_sub(2) as usize;
+
+        // Adjust the scroll offset to keep the selected item in view
+        if self.offset > selected {
+            self.offset = selected;
+        } else if self.offset + n_results <= selected {
+            self.offset = selected.saturating_sub(n_results).saturating_add(1);
+        }
+        let items = state
             .matcher
             .slice(self.offset as u32, results.height.saturating_sub(2) as u32);
-        self.matched = matched as usize;
-        self.results = results.height.saturating_sub(2) as usize;
+
         let padding = results.height.saturating_sub(2 + items.len() as u16);
         let mut indices = vec![];
 
@@ -142,7 +122,7 @@ impl TedWidget for Finder {
                     }
                     indices.sort();
 
-                    let selected = i + self.offset == self.selected;
+                    let selected = i + self.offset == selected;
                     let mut start: usize = 0;
                     let mut spans = vec![Span::from(if selected { "> " } else { "  " })];
                     let s: &str = &item.string;
@@ -196,6 +176,8 @@ impl TedWidget for Finder {
         //                               SEARCH                              //
         // ***************************************************************** //
 
+        let matched = state.matcher.matched();
+        let total = state.matcher.total();
         let available = search.width.saturating_sub(4) as usize;
         let counter_cols = 4 + cols(total) + cols(matched);
         let filter_cols = self.filter.chars().count();
@@ -233,8 +215,14 @@ impl TedWidget for Finder {
                 KeyCode::Char(char) => {
                     if event.modifiers == KeyModifiers::CONTROL {
                         match char {
-                            'j' => return self.down(),
-                            'k' => return self.up(),
+                            'j' => {
+                                state.matcher.down(&mut state.fs);
+                                return Flow::handled();
+                            }
+                            'k' => {
+                                state.matcher.up(&mut state.fs);
+                                return Flow::handled();
+                            }
                             _ => return Flow::not_handled(),
                         }
                     }
@@ -245,8 +233,14 @@ impl TedWidget for Finder {
                     self.update_filter();
                     return Flow::handled();
                 }
-                KeyCode::Up => return self.up(),
-                KeyCode::Down => return self.down(),
+                KeyCode::Up => {
+                    state.matcher.up(&mut state.fs);
+                    return Flow::handled();
+                }
+                KeyCode::Down => {
+                    state.matcher.down(&mut state.fs);
+                    return Flow::handled();
+                }
                 KeyCode::Backspace => {
                     self.filter.pop();
                     state.matcher.search(&self.filter, false);
@@ -272,7 +266,7 @@ impl TedWidget for Finder {
 }
 
 /// Returns the amount of columns needed to display the number n
-fn cols(n: u32) -> usize {
+fn cols(n: usize) -> usize {
     if n == 0 {
         return 1;
     }

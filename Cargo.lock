@@ -1850,6 +1850,8 @@ dependencies = [
  "ignore",
  "log",
  "nucleo",
+ "ropey",
+ "ted-fs",
  "tokio",
 ]
 
@@ -1863,6 +1865,7 @@ dependencies = [
  "log",
  "nucleo",
  "ratatui",
+ "ropey",
  "slotmap",
  "ted-config",
  "ted-fs",

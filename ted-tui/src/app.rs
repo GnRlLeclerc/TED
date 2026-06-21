@@ -9,7 +9,9 @@ use futures::{StreamExt, stream::Fuse};
 use ratatui::prelude::*;
 use ted_config::{Config, ConfigWatcher};
 use ted_fs::{FSEvent, Filesystem};
-use tokio::sync::mpsc::Receiver;
+use ted_matcher::Matcher;
+use tokio::sync::watch::Receiver as WatchReceiver;
+use tokio::{sync::mpsc::Receiver, time::Instant};
 
 use crate::{
     layouts::{Drawers, Panes},
@@ -28,6 +30,7 @@ pub struct App {
     fs_recv: Receiver<FSEvent>,
     config_recv: Receiver<Config>,
     term_recv: Fuse<EventStream>,
+    matcher_recv: WatchReceiver<Instant>,
 
     // Watcher handles
     #[allow(dead_code)]
@@ -38,8 +41,9 @@ impl App {
     pub fn new() -> Self {
         let (fs, fs_recv) = Filesystem::new();
         let (config, config_recv, config_watcher) = Config::new();
+        let (matcher, matcher_recv) = Matcher::new();
 
-        let mut state = State::new(fs, config);
+        let mut state = State::new(fs, config, matcher);
 
         Self {
             state,
@@ -48,6 +52,7 @@ impl App {
             fs_recv,
             config_recv,
             term_recv: EventStream::new().fuse(),
+            matcher_recv,
             config_watcher,
         }
     }
@@ -63,6 +68,8 @@ impl App {
 
         loop {
             tokio::select! {
+                biased; // prioritize terminal events
+
                 Some(Ok(event)) = self.term_recv.next() => {
                     match self.handle_term_event(event) {
                         Flow::Continue(_) => continue,
@@ -75,6 +82,12 @@ impl App {
                 }
                 Some(config) = self.config_recv.recv() => {
                     self.state.config = config;
+                }
+                Ok(_) = self.matcher_recv.changed() => {
+                    let instant = *self.matcher_recv.borrow();
+                    if !self.state.matcher.tick(instant) {
+                        continue;
+                    }
                 }
             }
             terminal.draw(|frame| self.render(frame))?;
@@ -94,6 +107,7 @@ impl App {
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('f') && key.modifiers.is_empty() {
                 self.editor.floating(Finder::new().boxed());
+                self.state.matcher.open();
                 return Flow::handled();
             }
         }

@@ -5,7 +5,7 @@ mod folder;
 mod item;
 
 pub use events::FSEvent;
-pub use file::File;
+pub use file::{Devicon, File};
 pub use filesystem::Filesystem;
 pub use folder::Folder;
 pub use item::Item;

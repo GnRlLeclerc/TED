@@ -24,27 +24,3 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
-
-# TODO: convert this into a workspace
-# Maybe I could name it `ted`, for tui + edit ? I like it.
-# - events (the events for delayed background processing)
-#   - tokio
-# - app (the main stuff)
-#   - crossterm
-#   - ratatui
-#   - tokio
-# - cli (clap integration)
-#   - clap
-# - widgets / screens (stateful widgets, ratatui stuff)
-#   - crossterm
-#   - ratatui
-# - state (pure state data) <- don't have this. Have `ted-fs` for filesystem integration
-
-# TODO: like helix, maybe later have:
-# - ted-lsp
-# - ted-git
-
-# For now, ted-cli is going to be the main binary
-# Core will contain the main app logic and import all other crates as deps
-
-# Do the config with the config file in ted-config. Host this in the app.

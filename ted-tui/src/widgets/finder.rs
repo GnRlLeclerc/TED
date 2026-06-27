@@ -295,16 +295,16 @@ trait Spans<'a> {
             // Filter out possible empty start span
             .filter(|(length, _)| *length > 0)
             .for_each(|(length, highlighted)| {
-                let (i, _) = chars.nth(length - 1).unwrap_or((s.len(), char::default()));
+                let (end_byte, _) = chars.nth(length - 1).unwrap_or((s.len(), char::default()));
 
-                let slice = &s[start_byte..i];
+                let slice = &s[start_byte..end_byte];
                 spans.push(if highlighted {
                     Span::from(slice).blue()
                 } else {
                     Span::from(slice)
                 });
 
-                start_byte = i;
+                start_byte = end_byte;
             });
 
         // Handle remaining tail

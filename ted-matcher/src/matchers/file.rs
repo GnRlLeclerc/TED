@@ -1,7 +1,10 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
 };
 
@@ -18,6 +21,7 @@ use super::{Matcher, Tick};
 /// Filename matcher
 pub struct FileMatcher {
     matcher: Nucleo<PathBuf>,
+    cancel: Arc<AtomicBool>,
 }
 
 impl FileMatcher {
@@ -33,6 +37,7 @@ impl FileMatcher {
                 None,
                 1,
             ),
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -54,11 +59,14 @@ impl Matcher for FileMatcher {
 
     fn open(&mut self, data: &Path) {
         let injector = self.matcher.injector();
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.cancel = cancel.clone();
 
         let walker = WalkBuilder::new(data).build_parallel();
-        thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             walker.run(|| {
                 let injector = injector.clone();
+                let cancel = cancel.clone();
                 Box::new(move |result| {
                     if let Ok(entry) = result
                         && entry.path().is_file()
@@ -68,6 +76,9 @@ impl Matcher for FileMatcher {
                         });
                     }
 
+                    if cancel.load(Ordering::Relaxed) {
+                        return WalkState::Quit;
+                    }
                     WalkState::Continue
                 })
             });
@@ -87,6 +98,7 @@ impl Matcher for FileMatcher {
 
     fn close(&mut self) {
         self.matcher.restart(true);
+        self.cancel.store(true, Ordering::Relaxed);
     }
 
     fn tick(&mut self) -> Tick {

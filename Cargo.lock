@@ -1847,6 +1847,7 @@ dependencies = [
 name = "ted-matcher"
 version = "0.1.0"
 dependencies = [
+ "devicons",
  "ignore",
  "log",
  "nucleo",
@@ -1862,6 +1863,7 @@ dependencies = [
  "crossterm",
  "enum-map",
  "futures",
+ "hex_color",
  "log",
  "nucleo",
  "ratatui",

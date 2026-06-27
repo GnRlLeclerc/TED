@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+devicons.workspace = true
 ignore.workspace = true
 log.workspace = true
 nucleo.workspace = true

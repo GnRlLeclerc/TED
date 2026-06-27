@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 futures = "0.3.31"
 crossterm.workspace = true
+hex_color.workspace = true
 log.workspace = true
 nucleo.workspace = true
 ratatui.workspace = true

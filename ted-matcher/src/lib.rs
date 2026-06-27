@@ -1,144 +1,93 @@
-use std::{borrow::Cow, path::PathBuf, sync::Arc, thread, time::Duration};
-
-use ignore::{WalkBuilder, WalkState};
-
-use nucleo::{
-    Config, Item, Nucleo, Utf32Str, Utf32String,
-    pattern::{CaseMatching, Normalization},
-};
+use std::time::Duration;
 
 use ropey::Rope;
 use ted_fs::{FileKey, Filesystem};
 use tokio::{sync::watch::Receiver, time::Instant};
 
-pub struct Matcher {
-    /// Background matcher to filter all entries
-    nucleo: Nucleo<PathBuf>,
-    /// Last time the matcher was ticked.
-    /// Used for debouncing when a new tick is received before
-    /// the timeout.
-    last_tick: Instant,
-    /// Debouncing duration
-    debounce: Duration,
-    /// Finder cursor
-    /// Stored here such that from the matcher tick event handling,
-    /// the filesystem file preview can be updated,
-    /// instead of it being hidden away in the finder widget.
-    selected: usize,
-    /// Total amount of items
-    total: usize,
-    /// Total amount of matched items
-    matched: usize,
-    /// Previewed file
-    previewed: Option<FileKey>,
+use crate::{
+    matchers::{Matcher, Tick, file::FileMatcher},
+    modes::MatcherMode,
+};
+
+mod matchers;
+mod modes;
+
+pub mod views {
+    pub use crate::matchers::file::FileView;
 }
 
-impl Matcher {
+pub use modes::{MatcherData, MatcherView};
+
+pub struct Matchers {
+    mode: MatcherMode,
+    files: FileMatcher,
+
+    /// Selected entry index
+    selected: usize,
+
+    /// Last tick result
+    tick: Tick,
+
+    /// Previewed file
+    previewed: Option<FileKey>,
+
+    /// Tick debouncing delay
+    debouncing: Duration,
+}
+
+impl Matchers {
     pub fn new() -> (Self, Receiver<Instant>) {
         let (tx, rx) = tokio::sync::watch::channel(Instant::now());
-        let config = Config::DEFAULT.match_paths();
 
         (
             Self {
-                nucleo: Nucleo::new(
-                    config,
-                    Arc::new(move || {
-                        // Ignore error, the matcher might run for a long time in the background
-                        let _ = tx.send(Instant::now());
-                    }),
-                    None,
-                    1,
-                ),
-                last_tick: Instant::now(),
-                debounce: Duration::from_millis(10),
+                mode: MatcherMode::File,
+                files: FileMatcher::new(tx),
                 selected: 0,
-                total: 0,
-                matched: 0,
+                tick: Tick::default(),
                 previewed: None,
+                debouncing: Duration::from_millis(10),
             },
             rx,
         )
     }
 
-    /// Open the matcher, scanning all files in the current directory and subdirectories.
-    pub fn open(&self) {
-        let injector = self.nucleo.injector();
+    pub fn open(&mut self, data: MatcherData) {
+        self.mode = (&data).into();
+        self.selected = 0;
 
-        thread::spawn(move || {
-            let walker = WalkBuilder::new(".").build_parallel();
-            walker.run(|| {
-                let injector = injector.clone();
-                Box::new(move |result| {
-                    if let Ok(entry) = result
-                        && entry.path().is_file()
-                    {
-                        injector.push(entry.path().into(), |path, string| {
-                            string[0] = Utf32String::from(path.display().to_string());
-                        });
-                    }
-
-                    WalkState::Continue
-                })
-            });
-        });
+        match data {
+            MatcherData::File(path) => self.files.open(path),
+            MatcherData::Grep(_path) => todo!("open grep matcher"),
+        }
     }
 
     pub fn search(&mut self, filter: &str, append: bool) {
-        self.nucleo.pattern.reparse(
-            0,
-            filter,
-            CaseMatching::Ignore,
-            Normalization::Smart,
-            append,
-        );
-        self.nucleo.tick(0);
+        match self.mode {
+            MatcherMode::File => self.files.search(filter, append),
+            MatcherMode::Grep => todo!("search grep matcher"),
+        }
         self.selected = 0;
     }
 
     pub fn close(&mut self) {
-        self.nucleo.restart(true);
+        match self.mode {
+            MatcherMode::File => self.files.close(),
+            MatcherMode::Grep => todo!("close grep matcher"),
+        }
         self.selected = 0;
         self.previewed = None;
     }
 
-    pub fn up(&mut self, fs: &mut Filesystem) {
+    pub fn up(&mut self) {
         self.selected = self
             .selected
             .saturating_add(1)
-            .min(self.matched.saturating_sub(1));
-        self.ensure_preview(fs);
+            .min(self.tick.matched.saturating_sub(1));
     }
 
-    pub fn down(&mut self, fs: &mut Filesystem) {
+    pub fn down(&mut self) {
         self.selected = self.selected.saturating_sub(1);
-        self.ensure_preview(fs);
-    }
-
-    pub fn ensure_preview(&mut self, fs: &mut Filesystem) {
-        let snapshot = self.nucleo.snapshot();
-        self.previewed = snapshot
-            .get_matched_item(self.selected as u32)
-            .and_then(|item| fs.ensure_preview(&item.data));
-    }
-
-    pub fn tick(&mut self, instant: Instant, fs: &mut Filesystem) -> bool {
-        let status = self.nucleo.tick(0);
-
-        // Nothing to update
-        if !status.changed {
-            return false;
-        }
-
-        // Last tick
-        if !status.running || instant.duration_since(self.last_tick) > self.debounce {
-            self.last_tick = instant;
-            self.matched = self.nucleo.snapshot().matched_item_count() as usize;
-            self.total = self.nucleo.snapshot().item_count() as usize;
-            self.ensure_preview(fs);
-            return true;
-        }
-
-        false
     }
 
     pub fn selected(&self) -> usize {
@@ -146,42 +95,46 @@ impl Matcher {
     }
 
     pub fn total(&self) -> usize {
-        self.total
+        self.tick.total
     }
 
     pub fn matched(&self) -> usize {
-        self.matched
+        self.tick.matched
+    }
+
+    /// Tick the correct matcher and returns true if something has changed.
+    pub fn tick(&mut self, instant: Instant) -> bool {
+        let tick = match self.mode {
+            MatcherMode::File => self.files.tick(),
+            MatcherMode::Grep => todo!("tick grep matcher"),
+        };
+
+        if !tick.changed || (tick.running && instant.elapsed() < self.debouncing) {
+            return false;
+        }
+
+        self.tick = tick;
+        true
+    }
+
+    pub fn slice(&self, offset: u32, limit: u32) -> MatcherView<'_> {
+        match self.mode {
+            MatcherMode::File => self.files.slice(offset, limit).into(),
+            MatcherMode::Grep => todo!("slice grep matcher"),
+        }
+    }
+
+    pub fn ensure_preview(&mut self, fs: &mut Filesystem) {
+        self.previewed = match self.mode {
+            MatcherMode::File => self
+                .files
+                .selected(self.selected)
+                .and_then(|path| fs.ensure_preview(path)),
+            MatcherMode::Grep => todo!("ensure preview grep matcher"),
+        };
     }
 
     pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<&'a Rope> {
-        self.previewed.and_then(|key| fs.preview(key))
-    }
-
-    /// Get a slice of the matched items, along with the total and matched counts.
-    pub fn slice(&self, offset: u32, limit: u32) -> Vec<ItemDisplay<'_>> {
-        let snapshot = self.nucleo.snapshot();
-        let matched = snapshot.matched_item_count();
-
-        let range = offset..(offset + limit).min(matched);
-        let items = snapshot
-            .matched_items(range.clone())
-            .map(ItemDisplay::from)
-            .collect::<Vec<_>>();
-
-        items
-    }
-}
-
-pub struct ItemDisplay<'a> {
-    pub utf32: Utf32Str<'a>,
-    pub string: Cow<'a, str>,
-}
-
-impl<'a> From<Item<'a, PathBuf>> for ItemDisplay<'a> {
-    fn from(item: Item<'a, PathBuf>) -> Self {
-        Self {
-            utf32: item.matcher_columns[0].slice(..),
-            string: item.data.to_string_lossy(),
-        }
+        self.previewed.as_ref().and_then(|key| fs.preview(*key))
     }
 }

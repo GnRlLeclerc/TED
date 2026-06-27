@@ -1,4 +1,4 @@
-use std::io::stdout;
+use std::{io::stdout, path::Path};
 
 use crossterm::{
     cursor::SetCursorStyle,
@@ -9,7 +9,7 @@ use futures::{StreamExt, stream::Fuse};
 use ratatui::prelude::*;
 use ted_config::{Config, ConfigWatcher};
 use ted_fs::{FSEvent, Filesystem};
-use ted_matcher::Matcher;
+use ted_matcher::{MatcherData, Matchers};
 use tokio::sync::watch::Receiver as WatchReceiver;
 use tokio::{sync::mpsc::Receiver, time::Instant};
 
@@ -41,9 +41,9 @@ impl App {
     pub fn new() -> Self {
         let (fs, fs_recv) = Filesystem::new();
         let (config, config_recv, config_watcher) = Config::new();
-        let (matcher, matcher_recv) = Matcher::new();
+        let (matchers, matcher_recv) = Matchers::new();
 
-        let mut state = State::new(fs, config, matcher);
+        let mut state = State::new(fs, config, matchers);
 
         Self {
             state,
@@ -84,7 +84,7 @@ impl App {
                     );
                     self.state.fs.handle_event(event);
                     if notify_matcher {
-                        self.state.matcher.ensure_preview(&mut self.state.fs);
+                        self.state.matchers.ensure_preview(&mut self.state.fs);
                     }
                 }
                 Some(config) = self.config_recv.recv() => {
@@ -92,9 +92,10 @@ impl App {
                 }
                 Ok(_) = self.matcher_recv.changed() => {
                     let instant = *self.matcher_recv.borrow();
-                    if !self.state.matcher.tick(instant, &mut self.state.fs) {
+                    if !self.state.matchers.tick(instant) {
                         continue;
                     }
+                    self.state.matchers.ensure_preview(&mut self.state.fs);
                 }
             }
             terminal.draw(|frame| self.render(frame))?;
@@ -114,7 +115,7 @@ impl App {
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('f') && key.modifiers.is_empty() {
                 self.editor.floating(Finder::new().boxed());
-                self.state.matcher.open();
+                self.state.matchers.open(MatcherData::File(Path::new(".")));
                 return Flow::handled();
             }
         }

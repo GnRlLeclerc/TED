@@ -1,10 +1,12 @@
 use crossterm::event::{Event, KeyCode, KeyModifiers};
-use nucleo::{Config, Matcher, Utf32String};
+use hex_color::HexColor;
+use nucleo::{Config, Matcher, Utf32Str, Utf32String};
 use ratatui::{
     layout::Offset,
     prelude::*,
     widgets::{Block, BorderType, Clear, Padding, Paragraph},
 };
+use ted_matcher::{MatcherView, views::FileView};
 
 use crate::{
     state::State,
@@ -81,7 +83,7 @@ impl TedWidget for Finder {
         //                               PREVIEW                             //
         // ***************************************************************** //
 
-        if let Some(rope) = state.matcher.preview(&state.fs) {
+        if let Some(rope) = state.matchers.preview(&state.fs) {
             FileBuffer::new(rope, 0)
                 .block(Self::block(Color::Green).title(" Preview "))
                 .render(preview, buf);
@@ -95,7 +97,7 @@ impl TedWidget for Finder {
         //                               RESULTS                             //
         // ***************************************************************** //
 
-        let selected = state.matcher.selected();
+        let selected = state.matchers.selected();
         let n_results = results.height.saturating_sub(2) as usize;
 
         // Adjust the scroll offset to keep the selected item in view
@@ -105,68 +107,23 @@ impl TedWidget for Finder {
             self.offset = selected.saturating_sub(n_results).saturating_add(1);
         }
         let items = state
-            .matcher
+            .matchers
             .slice(self.offset as u32, results.height.saturating_sub(2) as u32);
 
         let padding = results.height.saturating_sub(2 + items.len() as u16);
-        let mut indices = vec![];
 
         Paragraph::new(Text::from(
             (0..padding)
                 .map(|_| Line::default())
-                .chain(items.iter().enumerate().rev().map(|(i, item)| {
-                    indices.clear();
-                    for filter in &self.filter_utf32 {
-                        self.matcher
-                            .fuzzy_indices(item.utf32, filter.slice(..), &mut indices);
-                    }
-                    indices.sort();
-
-                    let selected = i + self.offset == selected;
-                    let mut start: usize = 0;
-                    let mut spans = vec![Span::from(if selected { "> " } else { "  " })];
-                    let s: &str = &item.string;
-                    let s = &s[2..];
-
-                    indices.retain_mut(|i| {
-                        if *i >= 2 {
-                            *i -= 2;
-                            true
-                        } else {
-                            false
-                        }
-                    });
-
-                    indices.chunk_by(|&a, &b| b <= a + 1).for_each(|chunk| {
-                        let chunk_0 = chunk[0] as usize;
-
-                        // 1. Pre-chunk
-                        if start < chunk_0 {
-                            spans.push(Span::from(&s[start..chunk_0]));
-                        }
-                        // 2. Chunk
-                        let end = (chunk[chunk.len() - 1] + 1) as usize;
-                        spans.push(s[chunk_0..end].blue());
-                        start = end;
-                    });
-
-                    // 3. Post-chunks
-                    if start < s.len() {
-                        spans.push(Span::from(&s[start..]));
-                    }
-
-                    let mut line = Line::from(spans);
-
-                    if selected {
-                        // Prolongate the line so that the background color covers 100% width
-                        line.push_span(Span::from(
-                            " ".repeat((results.width as usize).saturating_sub(line.width())),
-                        ));
-                        line = line.on_dark_gray().bold();
-                    }
-
-                    line
-                }))
+                .chain(match &items {
+                    MatcherView::File(views) => iter_views(
+                        &mut self.matcher,
+                        &self.filter_utf32,
+                        &views,
+                        selected.saturating_sub(self.offset),
+                        results.width as usize,
+                    ),
+                })
                 .collect::<Vec<_>>(),
         ))
         .block(Self::block(Color::Blue).title(" Results "))
@@ -176,8 +133,8 @@ impl TedWidget for Finder {
         //                               SEARCH                              //
         // ***************************************************************** //
 
-        let matched = state.matcher.matched();
-        let total = state.matcher.total();
+        let matched = state.matchers.matched();
+        let total = state.matchers.total();
         let available = search.width.saturating_sub(4) as usize;
         let counter_cols = 4 + cols(total) + cols(matched);
         let filter_cols = self.filter.chars().count();
@@ -204,23 +161,25 @@ impl TedWidget for Finder {
         match event {
             Event::Key(event) => match event.code {
                 KeyCode::Esc => {
-                    state.matcher.close();
+                    state.matchers.close();
                     return Flow::close();
                 }
                 KeyCode::Enter => {
                     // TODO: run the select option
-                    state.matcher.close();
+                    state.matchers.close();
                     return Flow::close();
                 }
                 KeyCode::Char(char) => {
                     if event.modifiers == KeyModifiers::CONTROL {
                         match char {
                             'j' => {
-                                state.matcher.down(&mut state.fs);
+                                state.matchers.down();
+                                state.matchers.ensure_preview(&mut state.fs);
                                 return Flow::handled();
                             }
                             'k' => {
-                                state.matcher.up(&mut state.fs);
+                                state.matchers.up();
+                                state.matchers.ensure_preview(&mut state.fs);
                                 return Flow::handled();
                             }
                             _ => return Flow::not_handled(),
@@ -229,21 +188,23 @@ impl TedWidget for Finder {
 
                     // Default handling
                     self.filter.push(char);
-                    state.matcher.search(&self.filter, true);
+                    state.matchers.search(&self.filter, true);
                     self.update_filter();
                     return Flow::handled();
                 }
                 KeyCode::Up => {
-                    state.matcher.up(&mut state.fs);
+                    state.matchers.up();
+                    state.matchers.ensure_preview(&mut state.fs);
                     return Flow::handled();
                 }
                 KeyCode::Down => {
-                    state.matcher.down(&mut state.fs);
+                    state.matchers.down();
+                    state.matchers.ensure_preview(&mut state.fs);
                     return Flow::handled();
                 }
                 KeyCode::Backspace => {
                     self.filter.pop();
-                    state.matcher.search(&self.filter, false);
+                    state.matchers.search(&self.filter, false);
                     self.update_filter();
                     return Flow::handled();
                 }
@@ -272,4 +233,116 @@ fn cols(n: usize) -> usize {
     }
 
     n.ilog10() as usize + 1
+}
+
+// ************************************************************************* //
+//                                  RENDERING                                //
+// ************************************************************************* //
+
+/// Helper trait to render the different results / view kinds from matchers
+trait Spans<'a> {
+    fn spans(
+        &'a self,
+        matcher: &mut Matcher,
+        filters: &[Utf32String],
+        indices: &mut Vec<u32>,
+        spans: &mut Vec<Span<'a>>,
+    );
+
+    /// Compute matching indices between a haystack and filters
+    fn compute_indices(
+        haystack: Utf32Str,
+        matcher: &mut Matcher,
+        filters: &[Utf32String],
+        indices: &mut Vec<u32>,
+        shift: usize,
+    ) {
+        indices.clear();
+        for filter in filters {
+            matcher.fuzzy_indices(haystack, filter.slice(..), indices);
+        }
+        indices.sort();
+
+        if shift > 0 {
+            indices.retain_mut(|i| {
+                if *i >= shift as u32 {
+                    *i -= shift as u32;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    }
+
+    /// Split a string into spans based on the provided indices
+    fn highlight_indices(s: &'a str, indices: &[u32], spans: &mut Vec<Span<'a>>) {
+        let mut start: usize = 0;
+        indices.chunk_by(|&a, &b| b <= a + 1).for_each(|chunk| {
+            let chunk_0 = chunk[0] as usize;
+
+            // 1. Pre-chunk
+            if start < chunk_0 {
+                spans.push(Span::from(&s[start..chunk_0]));
+            }
+            // 2. Chunk
+            let end = (chunk[chunk.len() - 1] + 1) as usize;
+            spans.push(s[chunk_0..end].blue());
+            start = end;
+        });
+
+        // 3. Post-chunks
+        if start < s.len() {
+            spans.push(Span::from(&s[start..]));
+        }
+    }
+}
+
+impl<'a, 'inner> Spans<'a> for FileView<'inner>
+where
+    'inner: 'a,
+{
+    fn spans(
+        &'a self,
+        matcher: &mut Matcher,
+        filters: &[Utf32String],
+        indices: &mut Vec<u32>,
+        spans: &mut Vec<Span<'a>>,
+    ) {
+        // Add file icon
+        let color = HexColor::parse(self.icon.color).unwrap_or_default();
+        spans.push(
+            Span::raw(format!("{} ", self.icon.icon)).fg(Color::Rgb(color.r, color.g, color.b)),
+        );
+
+        // Compute indices with shift=2 to remove leading ./ from paths
+        Self::compute_indices(self.utf32, matcher, filters, indices, 2);
+        Self::highlight_indices(&self.string[2..], indices, spans);
+    }
+}
+
+/// Produce an iterator of lines from the views
+fn iter_views<'a, T: Spans<'a>>(
+    matcher: &mut Matcher,
+    filters: &[Utf32String],
+    views: &'a [T],
+    selected: usize,
+    width: usize,
+) -> impl Iterator<Item = Line<'a>> {
+    let mut indices = vec![];
+    views.iter().enumerate().rev().map(move |(i, view)| {
+        let selected = i == selected;
+        let mut spans = vec![Span::from(if selected { "> " } else { "  " })];
+        view.spans(matcher, filters, &mut indices, &mut spans);
+
+        let mut line = Line::from(spans);
+
+        if selected {
+            // Prolongate the line so that the background color covers 100% width
+            line.push_span(Span::from(" ".repeat((width).saturating_sub(line.width()))));
+            line = line.on_dark_gray().bold();
+        }
+
+        line
+    })
 }

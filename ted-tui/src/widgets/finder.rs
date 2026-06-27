@@ -277,23 +277,39 @@ trait Spans<'a> {
 
     /// Split a string into spans based on the provided indices
     fn highlight_indices(s: &'a str, indices: &[u32], spans: &mut Vec<Span<'a>>) {
-        let mut start: usize = 0;
-        indices.chunk_by(|&a, &b| b <= a + 1).for_each(|chunk| {
-            let chunk_0 = chunk[0] as usize;
+        let mut chars = s.char_indices().skip(1); // offset by 1 to always fall on the next char boundary
+        let mut start_char = 0; // char slice start index
+        let mut start_byte = 0; // byte slice start index
+        let mut highlighted = true; // highlighted span toggle
+        indices
+            .chunk_by(|&a, &b| b <= a + 1)
+            .flat_map(|chunk| [chunk[0], (chunk[chunk.len() - 1] + 1)])
+            .map(|i| {
+                let i = i as usize;
+                let length = i - start_char;
+                start_char = i;
+                highlighted = !highlighted;
 
-            // 1. Pre-chunk
-            if start < chunk_0 {
-                spans.push(Span::from(&s[start..chunk_0]));
-            }
-            // 2. Chunk
-            let end = (chunk[chunk.len() - 1] + 1) as usize;
-            spans.push(s[chunk_0..end].blue());
-            start = end;
-        });
+                (length, highlighted)
+            })
+            // Filter out possible empty start span
+            .filter(|(length, _)| *length > 0)
+            .for_each(|(length, highlighted)| {
+                let (i, _) = chars.nth(length - 1).unwrap_or((s.len(), char::default()));
 
-        // 3. Post-chunks
-        if start < s.len() {
-            spans.push(Span::from(&s[start..]));
+                let slice = &s[start_byte..i];
+                spans.push(if highlighted {
+                    Span::from(slice).blue()
+                } else {
+                    Span::from(slice)
+                });
+
+                start_byte = i;
+            });
+
+        // Handle remaining tail
+        if start_byte < s.len() {
+            spans.push(Span::from(&s[start_byte..]));
         }
     }
 }

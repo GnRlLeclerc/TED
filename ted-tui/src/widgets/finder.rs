@@ -6,7 +6,10 @@ use ratatui::{
     prelude::*,
     widgets::{Block, BorderType, Clear, Padding, Paragraph},
 };
-use ted_matcher::{MatcherView, views::FileView};
+use ted_matcher::{
+    MatcherView,
+    views::{FileView, GrepView},
+};
 
 use crate::{
     state::State,
@@ -108,7 +111,7 @@ impl TedWidget for Finder {
         }
         let items = state
             .matchers
-            .slice(self.offset as u32, results.height.saturating_sub(2) as u32);
+            .slice(self.offset, results.height.saturating_sub(2) as usize);
 
         let padding = results.height.saturating_sub(2 + items.len() as u16);
 
@@ -117,6 +120,13 @@ impl TedWidget for Finder {
                 .map(|_| Line::default())
                 .chain(match &items {
                     MatcherView::File(views) => iter_views(
+                        &mut self.matcher,
+                        &self.filter_utf32,
+                        &views,
+                        selected.saturating_sub(self.offset),
+                        results.width as usize,
+                    ),
+                    MatcherView::Grep(views) => iter_views(
                         &mut self.matcher,
                         &self.filter_utf32,
                         &views,
@@ -337,16 +347,44 @@ where
     }
 }
 
+impl<'a, 'inner> Spans<'a> for GrepView<'inner>
+where
+    'inner: 'a,
+{
+    fn spans(
+        &'a self,
+        _matcher: &mut Matcher,
+        _filters: &[Utf32String],
+        _indices: &mut Vec<u32>,
+        spans: &mut Vec<Span<'a>>,
+    ) {
+        // Add file icon
+        let color = HexColor::parse(self.icon.color).unwrap_or_default();
+        spans.push(
+            Span::raw(format!("{} ", self.icon.icon)).fg(Color::Rgb(color.r, color.g, color.b)),
+        );
+
+        // Add raw line (matching is not done on the file names)
+        let s: &str = &self.string;
+        spans.push(Span::from(&s[2..]));
+
+        // Add the line number
+        spans.push(Span::from(":"));
+        spans.push(Span::from(self.line.to_string()).red());
+    }
+}
+
 /// Produce an iterator of lines from the views
-fn iter_views<'a, T: Spans<'a>>(
-    matcher: &mut Matcher,
-    filters: &[Utf32String],
+/// The iterator is boxed to erase the input type.
+fn iter_views<'a, 'b: 'a, T: Spans<'a>>(
+    matcher: &'b mut Matcher,
+    filters: &'b [Utf32String],
     views: &'a [T],
     selected: usize,
     width: usize,
-) -> impl Iterator<Item = Line<'a>> {
+) -> Box<dyn Iterator<Item = Line<'a>> + 'a> {
     let mut indices = vec![];
-    views.iter().enumerate().rev().map(move |(i, view)| {
+    Box::new(views.iter().enumerate().rev().map(move |(i, view)| {
         let selected = i == selected;
         let mut spans = vec![Span::from(if selected { "> " } else { "  " })];
         view.spans(matcher, filters, &mut indices, &mut spans);
@@ -358,7 +396,6 @@ fn iter_views<'a, T: Spans<'a>>(
             line.push_span(Span::from(" ".repeat((width).saturating_sub(line.width()))));
             line = line.on_dark_gray().bold();
         }
-
         line
-    })
+    }))
 }

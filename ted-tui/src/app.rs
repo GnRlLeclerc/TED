@@ -118,6 +118,11 @@ impl App {
                 self.state.matchers.open(MatcherData::File(Path::new(".")));
                 return Flow::handled();
             }
+            if key.code == KeyCode::Char('g') && key.modifiers.is_empty() {
+                self.editor.floating(Finder::new().boxed());
+                self.state.matchers.open(MatcherData::Grep(Path::new(".")));
+                return Flow::handled();
+            }
         }
 
         Flow::not_handled()

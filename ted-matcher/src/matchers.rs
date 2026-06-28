@@ -14,7 +14,7 @@ pub trait Matcher {
     fn search(&mut self, filter: &str, append: bool);
     fn close(&mut self);
     fn tick(&mut self) -> Tick;
-    fn slice<'a>(&'a self, offset: u32, limit: u32) -> Vec<Self::View<'a>>;
+    fn slice<'a>(&'a self, offset: usize, limit: usize) -> Vec<Self::View<'a>>;
 }
 
 /// A matcher tick result, produced when a matcher is ticked

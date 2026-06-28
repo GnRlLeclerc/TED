@@ -5,7 +5,7 @@ use ted_fs::{FileKey, Filesystem};
 use tokio::{sync::watch::Receiver, time::Instant};
 
 use crate::{
-    matchers::{Matcher, Tick, file::FileMatcher},
+    matchers::{Matcher, Tick, file::FileMatcher, grep::GrepMatcher},
     modes::MatcherMode,
 };
 
@@ -14,6 +14,7 @@ mod modes;
 
 pub mod views {
     pub use crate::matchers::file::FileView;
+    pub use crate::matchers::grep::GrepView;
 }
 
 pub use modes::{MatcherData, MatcherView};
@@ -21,6 +22,7 @@ pub use modes::{MatcherData, MatcherView};
 pub struct Matchers {
     mode: MatcherMode,
     files: FileMatcher,
+    grep: GrepMatcher,
 
     /// Selected entry index
     selected: usize,
@@ -42,7 +44,8 @@ impl Matchers {
         (
             Self {
                 mode: MatcherMode::File,
-                files: FileMatcher::new(tx),
+                files: FileMatcher::new(tx.clone()),
+                grep: GrepMatcher::new(tx),
                 selected: 0,
                 tick: Tick::default(),
                 previewed: None,
@@ -58,14 +61,14 @@ impl Matchers {
 
         match data {
             MatcherData::File(path) => self.files.open(path),
-            MatcherData::Grep(_path) => todo!("open grep matcher"),
+            MatcherData::Grep(path) => self.grep.open(path),
         }
     }
 
     pub fn search(&mut self, filter: &str, append: bool) {
         match self.mode {
             MatcherMode::File => self.files.search(filter, append),
-            MatcherMode::Grep => todo!("search grep matcher"),
+            MatcherMode::Grep => self.grep.search(filter, append),
         }
         self.selected = 0;
     }
@@ -73,7 +76,7 @@ impl Matchers {
     pub fn close(&mut self) {
         match self.mode {
             MatcherMode::File => self.files.close(),
-            MatcherMode::Grep => todo!("close grep matcher"),
+            MatcherMode::Grep => self.grep.close(),
         }
         self.selected = 0;
         self.previewed = None;
@@ -106,10 +109,10 @@ impl Matchers {
     pub fn tick(&mut self, instant: Instant) -> bool {
         let tick = match self.mode {
             MatcherMode::File => self.files.tick(),
-            MatcherMode::Grep => todo!("tick grep matcher"),
+            MatcherMode::Grep => self.grep.tick(),
         };
 
-        if !tick.changed || (tick.running && instant.elapsed() < self.debouncing) {
+        if tick.running && (!tick.changed || instant.elapsed() < self.debouncing) {
             return false;
         }
 
@@ -117,21 +120,19 @@ impl Matchers {
         true
     }
 
-    pub fn slice(&self, offset: u32, limit: u32) -> MatcherView<'_> {
+    pub fn slice(&self, offset: usize, limit: usize) -> MatcherView<'_> {
         match self.mode {
             MatcherMode::File => self.files.slice(offset, limit).into(),
-            MatcherMode::Grep => todo!("slice grep matcher"),
+            MatcherMode::Grep => self.grep.slice(offset, limit).into(),
         }
     }
 
     pub fn ensure_preview(&mut self, fs: &mut Filesystem) {
         self.previewed = match self.mode {
-            MatcherMode::File => self
-                .files
-                .selected(self.selected)
-                .and_then(|path| fs.ensure_preview(path)),
-            MatcherMode::Grep => todo!("ensure preview grep matcher"),
-        };
+            MatcherMode::File => self.files.selected(self.selected),
+            MatcherMode::Grep => self.grep.selected(self.selected),
+        }
+        .and_then(|path| fs.ensure_preview(path));
     }
 
     pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<&'a Rope> {

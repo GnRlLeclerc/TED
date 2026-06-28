@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::matchers::file::FileView;
+use crate::matchers::{file::FileView, grep::GrepView};
 
 /// Matcher mode.
 pub enum MatcherMode {
@@ -19,14 +19,14 @@ pub enum MatcherData<'a> {
 /// Matcher slice view data
 pub enum MatcherView<'a> {
     File(Vec<FileView<'a>>),
-    // Grep(Vec<GrepView<'a>>),
+    Grep(Vec<GrepView<'a>>),
 }
 
 impl MatcherView<'_> {
     pub fn len(&self) -> usize {
         match self {
             MatcherView::File(view) => view.len(),
-            // MatcherView::Grep(view) => view.len(),
+            MatcherView::Grep(view) => view.len(),
         }
     }
 
@@ -51,5 +51,11 @@ impl From<&MatcherData<'_>> for MatcherMode {
 impl<'a> From<Vec<FileView<'a>>> for MatcherView<'a> {
     fn from(view: Vec<FileView<'a>>) -> Self {
         MatcherView::File(view)
+    }
+}
+
+impl<'a> From<Vec<GrepView<'a>>> for MatcherView<'a> {
+    fn from(view: Vec<GrepView<'a>>) -> Self {
+        MatcherView::Grep(view)
     }
 }

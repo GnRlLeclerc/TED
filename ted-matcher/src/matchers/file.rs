@@ -5,7 +5,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
 };
 
 use devicons::FileIcon;
@@ -113,7 +112,9 @@ impl Matcher for FileMatcher {
         }
     }
 
-    fn slice<'a>(&'a self, offset: u32, limit: u32) -> Vec<Self::View<'a>> {
+    fn slice<'a>(&'a self, offset: usize, limit: usize) -> Vec<Self::View<'a>> {
+        let offset = offset as u32;
+        let limit = limit as u32;
         let snapshot = self.matcher.snapshot();
         let matched = snapshot.matched_item_count();
 

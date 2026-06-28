@@ -86,8 +86,8 @@ impl TedWidget for Finder {
         //                               PREVIEW                             //
         // ***************************************************************** //
 
-        if let Some(rope) = state.matchers.preview(&state.fs) {
-            FileBuffer::new(rope, 0)
+        if let Some((rope, line)) = state.matchers.preview(&state.fs) {
+            FileBuffer::new(rope, 0, line)
                 .block(Self::block(Color::Green).title(" Preview "))
                 .render(preview, buf);
         } else {

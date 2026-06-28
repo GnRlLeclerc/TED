@@ -30,8 +30,8 @@ pub struct Matchers {
     /// Last tick result
     tick: Tick,
 
-    /// Previewed file
-    previewed: Option<FileKey>,
+    /// Previewed file (and optional line to highlight)
+    previewed: Option<(FileKey, Option<usize>)>,
 
     /// Tick debouncing delay
     debouncing: Duration,
@@ -129,13 +129,21 @@ impl Matchers {
 
     pub fn ensure_preview(&mut self, fs: &mut Filesystem) {
         self.previewed = match self.mode {
-            MatcherMode::File => self.files.selected(self.selected),
-            MatcherMode::Grep => self.grep.selected(self.selected),
-        }
-        .and_then(|path| fs.ensure_preview(path));
+            MatcherMode::File => self
+                .files
+                .selected(self.selected)
+                .and_then(|path| fs.ensure_preview(path))
+                .map(|key| (key, None)),
+            MatcherMode::Grep => self
+                .grep
+                .selected(self.selected)
+                .and_then(|(path, line)| fs.ensure_preview(path).map(|key| (key, Some(line)))),
+        };
     }
 
-    pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<&'a Rope> {
-        self.previewed.as_ref().and_then(|key| fs.preview(*key))
+    pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<(&'a Rope, Option<usize>)> {
+        self.previewed
+            .as_ref()
+            .and_then(|(key, line)| fs.preview(*key).map(|rope| (rope, *line)))
     }
 }

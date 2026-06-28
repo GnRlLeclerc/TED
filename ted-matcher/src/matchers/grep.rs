@@ -38,8 +38,10 @@ impl GrepMatcher {
         }
     }
 
-    pub fn selected(&self, index: usize) -> Option<&Path> {
-        self.items.get(index).map(|(path, _)| path.as_path())
+    pub fn selected(&self, index: usize) -> Option<(&Path, usize)> {
+        self.items
+            .get(index)
+            .map(|(path, line)| (path.as_path(), *line))
     }
 }
 

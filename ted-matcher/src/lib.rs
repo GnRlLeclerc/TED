@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ropey::Rope;
+use ted_buffer::Buffer;
 use ted_fs::{FileKey, Filesystem};
 use tokio::{sync::watch::Receiver, time::Instant};
 
@@ -80,6 +80,7 @@ impl Matchers {
         }
         self.selected = 0;
         self.previewed = None;
+        self.tick = Tick::default();
     }
 
     pub fn up(&mut self) {
@@ -141,7 +142,7 @@ impl Matchers {
         };
     }
 
-    pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<(&'a Rope, Option<usize>)> {
+    pub fn preview<'a>(&self, fs: &'a Filesystem) -> Option<(&'a Buffer, Option<usize>)> {
         self.previewed
             .as_ref()
             .and_then(|(key, line)| fs.preview(*key).map(|rope| (rope, *line)))

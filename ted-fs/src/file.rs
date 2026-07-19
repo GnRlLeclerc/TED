@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use devicons::FileIcon;
 use hex_color::HexColor;
-use ropey::Rope;
+use ted_buffer::Buffer;
 use tokio::fs;
 
 use crate::FolderKey;
@@ -29,8 +29,9 @@ pub struct File {
     /// Optional parent (is None when the file is loaded as a peeked orphan)
     pub parent: Option<FolderKey>,
     pub name: String,
-    pub buffer: Option<Rope>,
     pub icon: Devicon,
+
+    pub buffer: Option<Buffer>,
 }
 
 impl File {
@@ -71,7 +72,7 @@ impl Ord for File {
     }
 }
 
-pub async fn load_rope(path: &Path) -> Option<Rope> {
+pub async fn load_buffer(path: &Path) -> Option<Buffer> {
     let bytes = match fs::read(path).await {
         Ok(bytes) => bytes,
         Err(err) => {
@@ -79,5 +80,5 @@ pub async fn load_rope(path: &Path) -> Option<Rope> {
             return None;
         }
     };
-    Some(Rope::from_str(&String::from_utf8_lossy(&bytes)))
+    Some(Buffer::new(&String::from_utf8_lossy(&bytes)))
 }

@@ -1,4 +1,4 @@
-use ropey::Rope;
+use ted_buffer::Buffer;
 
 use crate::{FileKey, FolderKey, file::File, folder::Folder};
 
@@ -12,6 +12,6 @@ pub enum FSEvent {
     OrphanLoaded(File),
     BufferLoaded {
         key: FileKey,
-        buffer: Rope,
+        buffer: Buffer,
     },
 }

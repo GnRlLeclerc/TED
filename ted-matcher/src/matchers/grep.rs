@@ -103,7 +103,7 @@ impl Matcher for GrepMatcher {
                             &matcher,
                             entry.path(),
                             UTF8(move |line_number, _line| {
-                                items.push((path.clone(), line_number as usize));
+                                items.push((path.clone(), line_number as usize - 1));
                                 Ok(true)
                             }),
                         );

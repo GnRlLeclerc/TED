@@ -1,0 +1,9 @@
+[package]
+name = "ted-buffer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ropey.workspace = true
+streaming-iterator.workspace = true
+tree-sitter.workspace = true

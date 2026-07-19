@@ -3,12 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ropey::Rope;
+use ted_buffer::Buffer;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use slotmap::SlotMap;
 
-use crate::file::load_rope;
+use crate::file::load_buffer;
 use crate::{FSEvent, File, FileKey, Folder, FolderKey, Item};
 
 pub struct Filesystem {
@@ -151,7 +151,7 @@ impl Filesystem {
         }
     }
 
-    pub fn preview(&self, key: FileKey) -> Option<&Rope> {
+    pub fn preview(&self, key: FileKey) -> Option<&Buffer> {
         self.files[key].buffer.as_ref()
     }
 
@@ -328,7 +328,7 @@ impl Filesystem {
 
             let mut file = File::new(path, None);
             if buffer {
-                file.buffer = load_rope(&file.path).await;
+                file.buffer = load_buffer(&file.path).await;
             }
             if let Err(err) = sender.send(FSEvent::OrphanLoaded(file)).await {
                 log::error!("Failed to send orphan loaded event: {}", err);
@@ -346,7 +346,7 @@ impl Filesystem {
         let sender = self.sender.clone();
         let path = self.files[key].path.clone();
         tokio::spawn(async move {
-            if let Some(buffer) = load_rope(&path).await {
+            if let Some(buffer) = load_buffer(&path).await {
                 if let Err(err) = sender.send(FSEvent::BufferLoaded { key, buffer }).await {
                     log::error!("Failed to send buffer loaded event: {}", err);
                 }
@@ -391,7 +391,7 @@ impl Filesystem {
     }
 
     /// Initialize a file buffer that is being lazily loaded.
-    fn init_buffer(&mut self, key: FileKey, buffer: Rope) {
+    fn init_buffer(&mut self, key: FileKey, buffer: Buffer) {
         self.files[key].buffer = Some(buffer);
         self.loading.remove(&self.files[key].path);
     }

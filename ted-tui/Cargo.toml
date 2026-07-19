@@ -13,6 +13,7 @@ ratatui.workspace = true
 ropey.workspace = true
 slotmap.workspace = true
 tokio.workspace = true
+ted-buffer.path = "../ted-buffer"
 ted-config.path = "../ted-config"
 ted-matcher.path = "../ted-matcher"
 ted-fs.path = "../ted-fs"

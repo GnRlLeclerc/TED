@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["ted-cli", "ted-config", "ted-fs", "ted-matcher", "ted-tui"]
+members = [
+  "ted-cli",
+  "ted-config",
+  "ted-fs",
+  "ted-matcher",
+  "ted-buffer",
+  "ted-tui",
+]
 
 default-members = ["ted-cli"]
 
@@ -19,7 +26,9 @@ ratatui = "0.30.0"
 ropey = "1.6.1"
 serde = { version = "1.0.228", features = ["derive"] }
 slotmap = "1.1.1"
+streaming-iterator = "0.1.9"
 tokio = { version = "1.50.0", features = ["full"] }
+tree-sitter = "0.26.9"
 
 [profile.dev.package."*"]
 opt-level = 3

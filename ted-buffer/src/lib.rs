@@ -5,7 +5,7 @@ mod highlights;
 mod provider;
 mod utils;
 
-pub use highlights::{Highlight, HighlightsTS};
+pub use highlights::{HighlightLine, HighlightLines, HighlightsTS};
 
 /// A text buffer with optional highlighting
 pub struct Buffer {

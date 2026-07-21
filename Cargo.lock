@@ -1977,6 +1977,7 @@ dependencies = [
  "enum-map",
  "futures",
  "hex_color",
+ "itertools",
  "log",
  "nucleo",
  "ratatui",

@@ -1,5 +1,5 @@
 use ratatui::{prelude::*, widgets::Paragraph};
-use ted_buffer::Buffer as TextBuffer;
+use ted_buffer::{Buffer as TextBuffer, HighlightLine};
 
 pub struct FileBuffer<'a> {
     text: &'a TextBuffer,
@@ -19,6 +19,7 @@ impl<'a> FileBuffer<'a> {
         }
     }
 
+    /// Produce a paragraph to render the unstyled text content
     fn raw(&self, area: Rect) -> Paragraph<'a> {
         Paragraph::new(Text::from(
             self.text
@@ -37,6 +38,45 @@ impl<'a> FileBuffer<'a> {
                 })
                 .collect::<Vec<_>>(),
         ))
+    }
+
+    /// Write highlights to the buffer
+    /// TODO: properly map indices to styles.
+    /// Take into account lsp vs tree-sitter highlights
+    fn highlights(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        highlights: impl Iterator<Item = HighlightLine>,
+    ) {
+        let width = area.width as usize;
+        let col_start = self.scroll_x;
+        let col_end = self.scroll_x + area.width as usize;
+        let row_start = self.scroll_y;
+        let row_end = self.scroll_y + area.height as usize;
+
+        highlights
+            .filter_map(|line| {
+                // Check for out of bounds
+                if line.row < row_start
+                    || line.row >= row_end
+                    || line.end < col_start
+                    || line.start >= col_end
+                {
+                    return None;
+                }
+
+                // Compute ranges
+                let start = line.start.saturating_sub(col_start);
+                let end = (line.end - col_start).min(width);
+                let row = line.row - row_start;
+
+                Some((
+                    Rect::new(start as u16, row as u16, (end - start) as u16, 1),
+                    Style::default(), // TODO: map from tree-sitter
+                ))
+            })
+            .for_each(|(rect, style)| buf.set_style(rect, style));
     }
 }
 

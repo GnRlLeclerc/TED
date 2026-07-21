@@ -3,23 +3,80 @@
 use std::ops::Range;
 
 use ropey::Rope;
-use streaming_iterator::convert;
-use tree_sitter::{Query, QueryCursor, StreamingIterator, Tree};
+use tree_sitter::{Query, QueryCapture, QueryCursor, StreamingIterator, Tree};
 
-use crate::{
-    provider::Provider,
-    utils::{char_end, char_start},
-};
+use crate::provider::Provider;
 
-/// Highlight range, for writing into ratatui
-pub struct Highlight {
-    /// Start char index
-    pub start: usize,
-    /// End char index
-    pub end: usize,
-    /// Style index in the query capture names slice
+/// A highlight on a single line
+pub struct HighlightLine {
+    /// Style index
     pub style: usize,
+    pub start: usize,
+    pub end: usize,
+    pub row: usize,
 }
+
+// ************************************************************************* //
+//                                   ITERATOR                                //
+// ************************************************************************* //
+
+/// Iterator over single-line highlights
+pub struct HighlightLines {
+    style: usize,
+    start_col: usize,
+    end_col: usize,
+    start_row: usize,
+    end_row: usize,
+
+    current_row: usize,
+}
+
+impl From<QueryCapture<'_>> for HighlightLines {
+    fn from(value: QueryCapture) -> Self {
+        let node = value.node;
+        let start = node.start_position();
+        let end = node.end_position();
+
+        Self {
+            style: value.index as usize,
+            start_col: start.column,
+            end_col: end.column,
+            start_row: start.row,
+            end_row: end.row,
+            current_row: start.row,
+        }
+    }
+}
+
+impl Iterator for HighlightLines {
+    type Item = HighlightLine;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_row > self.end_row {
+            return None;
+        }
+
+        let is_first = self.current_row == self.start_row;
+        let is_last = self.current_row == self.end_row;
+
+        let start = if is_first { self.start_col } else { 0 };
+        let end = if is_last { self.end_col } else { usize::MAX };
+        let row = self.current_row;
+
+        self.current_row += 1;
+
+        Some(HighlightLine {
+            style: self.style,
+            start,
+            end,
+            row,
+        })
+    }
+}
+
+// ************************************************************************* //
+//                                 TREE-SITTER                               //
+// ************************************************************************* //
 
 /// Highlight computation from tree-sitter
 pub struct HighlightsTS<'a> {
@@ -66,24 +123,18 @@ impl<'a> HighlightsTS<'a> {
 
     /// Set the byte range for a range of chars within a line
     pub fn line_range(mut self, line: usize, chars: Range<usize>) -> Self {
+        let offset = self.rope.line_to_byte(line);
         let line = self.rope.line(line);
-        self.range = line.char_to_byte(chars.start)..line.char_to_byte(chars.end);
+        self.range = offset + line.char_to_byte(chars.start)..offset + line.char_to_byte(chars.end);
         self
     }
 
-    pub fn iter(&mut self) -> impl StreamingIterator<Item = Highlight> {
+    pub fn iter(&mut self) -> impl Iterator<Item = HighlightLine> {
         self.cursor.set_byte_range(self.range.clone());
         self.cursor
             .matches(self.query, self.tree.root_node(), Provider(self.rope))
-            .flat_map(|m| {
-                convert(m.captures.iter().map(|capture| {
-                    let node = capture.node;
-                    Highlight {
-                        start: char_start(self.rope, node),
-                        end: char_end(self.rope, node),
-                        style: capture.index as usize,
-                    }
-                }))
-            })
+            .map_deref(|m| m.captures.iter().copied())
+            .flatten()
+            .flat_map(HighlightLines::from)
     }
 }
